@@ -1,0 +1,341 @@
+# ManuscriptAgent
+
+An agentic write → submit → review → revise → resubmit loop for a real manuscript file.
+
+Three agents, one file:
+
+- **Author** — drafts the manuscript, plans each revision, rewrites the file in place, and
+  writes the response letter.
+- **Reviewers** — N independent personas (methodologist, domain expert, generalist, optional
+  skeptic), each specialised to a CS subfield via `--topic`, producing structured reviews with
+  per-point severities and scores. On round 2+
+  each reviewer sees its own previous review and the response letter, and checks whether the
+  claimed edits actually landed in the text.
+- **Editor** — adjudicates the reviews rather than averaging them, discards points that are
+  wrong about the manuscript, and issues `accept` / `minor_revision` / `major_revision` /
+  `reject`.
+
+The loop runs until the editor accepts, rejects, or the round budget runs out.
+
+## Install
+
+```bash
+python3 -m venv .venv && .venv/bin/pip install -e .
+export ANTHROPIC_API_KEY=sk-ant-...   # or run `ant auth login`
+
+# the default author role is an OpenAI model, so both are needed
+.venv/bin/pip install -e ".[openai]"
+export OPENAI_API_KEY=sk-...
+```
+
+## Use
+
+```bash
+# draft from a brief
+manuscript-agent write examples/brief.md -o paper.md --venue biomed-journal
+
+# one review round, nothing rewritten
+manuscript-agent review paper.md --topic security --adversarial -o review-report.md
+
+# the full loop
+manuscript-agent submit paper.md --rounds 3 --venue cs-conference --topic ml
+manuscript-agent submit paper.tex --rounds 4 --reviewers 4 --adversarial --topic systems --in-place
+manuscript-agent submit paper.md --venue-file examples/venue-custom.json \
+                                 --topic-file examples/topic-custom.json
+```
+
+Without `--in-place`, `submit` works on a copy — `paper.revised.md`, or `mypaper.revised/`
+for a package — and leaves your original alone.
+
+`.md`, `.tex`, `.txt` and `.rst` are all handled; the extension picks the format the author
+agent is told to emit.
+
+## Submission packages
+
+Point `submit` or `review` at a **directory** and it is treated as a submission bundle: the
+main file plus everything it pulls in. A single `.tex` that `\input`s other files is promoted
+to a package automatically.
+
+```bash
+manuscript-agent submit examples/package --topic ml --rounds 3
+manuscript-agent submit paper/ --main paper/manuscript.tex   # when several files declare \documentclass
+```
+
+What the package does with each part:
+
+| part | handling |
+| --- | --- |
+| `\input` / `\include` / `\subfile` | resolved recursively, depth-first, each file once; commented-out includes ignored |
+| section files | concatenated into one document for reviewing, each inside a `%%% FILE: path %%%` marker |
+| `.bib` | keys parsed and treated as available to cite, so citing an existing entry is not mistaken for fabrication |
+| figures / data | drawn into the compiled PDF, so reviewers see them directly; also inventoried in a manifest with captions for the `--no-compile` path |
+| `\includegraphics{fig}` with no extension | resolved against `.pdf`, `.png`, `.jpg`, `.jpeg`, `.eps` |
+
+### The submission is the compiled PDF
+
+Reviewers do not read your sources — they read the article, exactly as a venue would receive
+it. Each round compiles the package with `latexmk` and sends the resulting PDF to the
+reviewers and the editor as an attachment, so they see the figures, the tables, the captions
+and the layout, not a description of them.
+
+```bash
+manuscript-agent submit examples/package            # compiles, submits round-1/submitted.pdf
+manuscript-agent submit paper/ --engine xelatex
+manuscript-agent submit paper/ --no-compile         # review the sources instead
+```
+
+`--no-compile` falls back to source review, and so does any package whose main file is not
+`.tex` or when no LaTeX toolchain is installed — the reviewers then read the marked-up
+sources as before.
+
+**A revision that does not build has not been made.** After each round the package is
+recompiled; if the author broke it, the compiler errors go back to the author as a repair
+task (substance unchanged — it is a repair, not a revision) and the build is retried once.
+If it still fails, the run stops with `BuildError` and the full log, because there is nothing
+to submit. `round-N/build-failure.log` holds the log whenever this happens. Unresolved
+citations and references are reported as warnings rather than failures, so a paper with a
+dangling `\ref` still reaches the reviewers with the problem noted.
+
+Aux files are kept in `.manuscript-build/` inside the package, out of your sources and out of
+the snapshots.
+
+**The author edits per file.** It emits only the files it changed, each wrapped in the same
+`%%% FILE: ... %%%` markers, and those blocks replace those files. Everything else is
+untouched byte-for-byte as a property of the mechanism rather than an instruction the model
+is asked to follow. New source files may be created inside the package; writes outside the
+package root, writes to binary files, and output with no FILE blocks are all rejected as
+`PackageError`.
+
+**The fabrication check extends to assets.** The author cannot create a figure, so a revision
+that answers "we need an ROC curve" by writing `\includegraphics{figures/roc.pdf}` for a file
+that does not exist is reported exactly like an invented number — and, under the default
+`retry`, sent back to be removed or admitted as a gap.
+
+Round snapshots copy the whole tree, so `round-1/submitted/` and `round-1/revised/` are
+complete, compilable packages rather than single files.
+
+## What you get
+
+Each run writes to `runs/<paper>-<timestamp>/`:
+
+```
+round-1/
+  submitted.pdf        the compiled article the reviewers actually read
+  submitted/           snapshot of the whole source package as submitted
+  build-failure.log    compiler output, when a revision broke the build
+  reviews.md           the reviews, human-readable
+  reviews.json         the same, structured
+  meta-review.md       the editor's adjudication and decision
+  revision-plan.md     what the author decided to change, and what to rebut
+  revised/             source snapshot after revision
+  changes.diff         unified diff of the round
+  response-letter.md   point-by-point reply to the reviewers
+  out-of-scope.md      requests the author declined, with reasons (if any)
+  unaddressed.md       critical issues neither planned nor declined (if any)
+  integrity.md         values introduced with no antecedent in the reviewed version
+round-2/ ...
+summary.md             score table across rounds + final decision
+```
+
+## Casting models in roles
+
+Every agent talks to the same two-method interface, so which provider plays which role is
+configuration. Roles are named with `provider:model`; the provider is inferred when the model
+name is unambiguous (`gpt-5.5` → OpenAI, `claude-opus-5` → Claude).
+
+**Default casting** — the author writes on OpenAI, the panel and the editor judge on Claude:
+
+| role | model |
+| --- | --- |
+| author | `openai:gpt-5.5` |
+| reviewers (all) | `claude:claude-opus-5` |
+| editor | `claude:claude-opus-5` |
+
+Both `OPENAI_API_KEY` and `ANTHROPIC_API_KEY` are therefore needed for a default run.
+
+```bash
+# default: gpt-5.5 writes, Opus reviews and decides
+manuscript-agent submit paper.md
+
+# cast one model in every role instead
+manuscript-agent submit paper.md --model claude-opus-5
+
+# override a single role; it wins over --model and over the defaults
+manuscript-agent submit paper.md --author-model openai:gpt-5.4
+
+# a mixed panel — fewer specs than reviewers cycles them
+manuscript-agent submit paper.md --reviewers 4 \
+  --reviewer-model claude-opus-5 --reviewer-model openai:gpt-5.4
+```
+
+Precedence is `--author-model`/`--editor-model`/`--reviewer-model` → `--model` → the defaults
+above. Change the defaults in `DEFAULT_AUTHOR_MODEL` / `DEFAULT_REVIEWER_MODEL` /
+`DEFAULT_EDITOR_MODEL` at the top of [`config.py`](manuscript_agent/config.py).
+
+```python
+from manuscript_agent import ModelSpec, RunConfig, VENUES
+
+cfg = RunConfig(venue=VENUES["cs-conference"])              # the default casting
+cfg = RunConfig(                                            # or name the roles yourself
+    venue=VENUES["cs-conference"],
+    author_model=ModelSpec.parse("openai:gpt-5.5"),
+    editor_model=ModelSpec.parse("claude-opus-5"),
+    reviewer_models=[ModelSpec.parse("claude-opus-5"), ModelSpec.parse("openai:gpt-5.4")],
+)
+```
+
+Why bother: a panel drawn from one model shares that model's blind spots, and its author
+shares them too — the author is then reviewed by something that fails the same way it does.
+Splitting the panel across providers, and putting the editor on a different model from the
+author, is the cheapest available defence against that. `summary.md` records which model
+played each role, and the run log tags every review with its provider.
+
+Anthropic effort levels map onto OpenAI reasoning effort, with `xhigh`/`max` clamped to
+`high`; non-reasoning OpenAI models omit the parameter entirely.
+
+## Reviewer specialisation by CS subfield
+
+`--topic` picks the evidentiary standard the reviewers hold the manuscript to. Each profile
+in [`manuscript_agent/topics.py`](manuscript_agent/topics.py) supplies the reviewer's
+background, what that community expects a paper to supply, and the failure modes it is
+practised at catching. Both the reviewers and the editor receive it.
+
+| topic | the paper is asked for | what gets caught |
+| --- | --- | --- |
+| `ml` | multiple seeds with dispersion, equal-budget tuned baselines, mechanism-isolating ablation | a gain inside seed variance; test-set model selection |
+| `nlp` | human eval with agreement, contamination check, verbatim prompts | LLM-as-judge with no human validation; prompts tuned on test |
+| `cv` | matched backbone/resolution/schedule, FLOPs and latency | a stronger backbone doing the work; undisclosed TTA |
+| `systems` | p95/p99 not means, full config, warm-up excluded, tuned real baseline | mean-only latency; default-config baselines; microbenchmark→end-to-end leaps |
+| `security` | threat model stated first, adaptive attacker, FP rate on benign data | a threat model that excludes the attacks the defense can't stop |
+| `pl` | proofs, scoped soundness claims, implementation matching the formalism | a sketch for the hard case; optimizations outside the proved model |
+| `theory` | complete proofs, bounds compared in the same model, hidden constants | an assumption doing the work; a regime nobody cares about |
+| `db` | standard workloads, index/buffer/isolation disclosure, concurrency, recovery | a comparison DBMS left at defaults; single-threaded numbers |
+| `hci` | design, N, recruitment, IRB, effect sizes, coding reliability | a sample too narrow for the claim; p-values with no effect size |
+| `se` | sampling rationale, threats-to-validity, replication package | tools evaluated on their authors' own projects |
+| `networks` | justified topology and traffic model, testbed evidence, fairness | deployment claims from simulation alone; no competing flows |
+| `general` | *(default — no subfield standards injected)* | |
+
+Add your own as JSON and pass `--topic-file` (see
+[`examples/topic-custom.json`](examples/topic-custom.json)), or add a `Topic` to `TOPICS`.
+The five fields are `id`, `name`, `expertise`, `standards`, `red_flags`. Reviewers are told
+that a missing item is a real weakness *only* against what the paper actually claims, so the
+checklist tightens the review without turning it into box-ticking.
+
+## Library use
+
+```python
+from pathlib import Path
+from manuscript_agent import VENUES, Manuscript, RunConfig, SubmissionPipeline
+
+from manuscript_agent import TOPICS
+
+cfg = RunConfig(
+    venue=VENUES["cs-conference"],
+    topic=TOPICS["systems"],
+    rounds=3,
+    reviewer_count=4,
+    adversarial=True,
+)
+result = SubmissionPipeline(cfg, on_event=print).run(
+    Manuscript.load("paper.tex"), Path("runs")
+)
+print(result.decision, result.rounds[-1].meta.critical_issues)
+```
+
+## Tuning it
+
+Almost everything you'll want to change is prompt text or config, in two places:
+
+- `manuscript_agent/config.py` — venue profiles (`VENUES`) and reviewer personas. A venue
+  profile is four strings: scope, acceptance bar, review form, length. Add your own, or pass
+  one as JSON with `--venue-file`.
+- `manuscript_agent/topics.py` — subfield evidentiary standards (`TOPICS`), described above.
+  Venue answers *how selective*; topic answers *what counts as evidence here*.
+- `manuscript_agent/agents/*.py` — the system prompts and task prompts for each role. The
+  guardrails that matter live here: reviewers are told not to invent prior work, the author
+  is told never to fabricate a result to satisfy a reviewer and to leave untouched sections
+  byte-for-byte alone, the editor is told to name which reviewer is wrong.
+
+## Guardrails
+
+The case the loop is built around is the reviewer asking for something the authors cannot
+produce — a new experiment, data they do not hold, a study they have not run.
+
+1. **The author can refuse.** `RevisionItem.stance` includes `rebut`, and `RevisionPlan`
+   has an `out_of_scope` list. The revise prompt forbids the alternative outright: never add
+   a result, number or citation that does not exist to satisfy a reviewer. The instructed
+   response to an impossible request is to scope the claim to what was shown, add the gap to
+   the limitations, and argue it in the letter.
+2. **The editor rules on the refusal.** The editor receives the response letter and the
+   `out_of_scope` declarations, and is instructed that if it accepts a request is impossible
+   it has two honest options — drop the demand and require the limitation instead, or decide
+   the manuscript cannot be accepted here. Re-issuing a demand it has accepted is impossible
+   is explicitly called out as not a decision. This is what stops the loop from deadlocking
+   on an unmeetable requirement.
+3. **Silent drops are caught in code, not by a prompt.** Every plan item records which of the
+   editor's `critical_issues` it addresses (by index). `unaddressed_issues()` in
+   `pipeline.py` computes the set difference: an issue that is neither planned nor declined
+   is written to `round-N/unaddressed.md`, logged as a WARNING, and handed to the editor next
+   round as `<unaddressed_critical_issues>` to rule on. This is deterministic — it does not
+   depend on the editor noticing.
+4. **Compliance is verified against the text.** Round 2+ reviewers get their own prior review
+   and the response letter, and are told to check claimed edits against the manuscript rather
+   than trust the letter.
+
+5. **Invented evidence is caught mechanically.** After every revision,
+   [`integrity.py`](manuscript_agent/integrity.py) diffs the revised manuscript against the
+   version the reviewers actually read and reports every numeric literal and citation key
+   that is newly asserted with no antecedent in the earlier text. Structural numbering
+   (`Section 4`, `Fig. 3`, `Table 7`, `\ref{}`, list markers, URLs) is excluded, so what
+   surfaces is quantitative claims and citations — exactly the things a model under pressure
+   from a reviewer will invent. A new value that looks like a re-rounding of an existing one
+   is flagged with that note attached.
+
+   `--on-fabrication` decides what happens next:
+
+   | | behaviour |
+   | --- | --- |
+   | `retry` *(default)* | the author gets one correction pass: source each value, or remove it and replace the claim with `[TODO: ...]` naming the evidence that would be needed. Anything that survives is escalated to the editor as `<integrity_report>`, where unexplained quantitative claims are grounds for rejection rather than revision. |
+   | `warn` | recorded to `integrity.md` and escalated, no correction pass |
+   | `fail` | raises `FabricationError` and stops the run |
+
+   `--ignore-integers-below N` suppresses bare integers under `N` if counts like "3 datasets"
+   prove noisy in your documents; the default of `0` shows everything.
+
+   The check is conservative by construction — it cannot tell a real unrecorded result from
+   an invented one, only that the author did not have it in writing before the reviewers
+   asked. That is the property worth enforcing.
+
+## Tests
+
+Three offline suites, no API key needed — they stub the model and exercise the control flow:
+
+```bash
+.venv/bin/python tests/test_loop.py          # full loop, revision applied, artifacts written
+.venv/bin/python tests/test_build.py         # compile, attach the PDF, repair a broken build
+.venv/bin/python tests/test_providers.py     # spec parsing, request shapes, panel routing
+.venv/bin/python tests/test_guardrails.py    # impossible request -> declined -> editor rules
+.venv/bin/python tests/test_fabrication.py   # invented result -> detect, repair, escalate, fail
+```
+
+## Design notes and limits
+
+- **Revision is a whole-file rewrite.** The author agent receives the full manuscript and
+  emits the full revised manuscript, with an instruction to leave unplanned regions
+  unchanged. This is reliable for papers up to roughly novella length and makes
+  `changes.diff` meaningful, but it costs output tokens proportional to the paper on every
+  round. For book-length input, split into per-section files and loop over them.
+- **Nothing compiles or runs your LaTeX.** Add a `latexmk` call after `manuscript.save()` in
+  `pipeline.py` if you want a hard check that the revision still builds.
+- **Reviewers see only the manuscript.** They have no literature access, so novelty and
+  prior-art judgments are the weakest part of the output; the prompt instructs them to phrase
+  suspected prior work as a question rather than a claim. Wire in the `web_search` server
+  tool in `llm.py` if you want real citation checking.
+- **Reviews are structured outputs** (`messages.parse` with Pydantic schemas), so scores and
+  recommendations are enumerated and machine-usable rather than parsed out of prose.
+- **Reviewers run concurrently** in a thread pool; the model client is shared.
+- Refusals surface as `manuscript_agent.llm.RefusalError`. If you want automatic server-side
+  fallback instead, switch `llm.py` to `client.beta.messages.*` with the
+  `server-side-fallback-2026-07-01` beta and `fallbacks="default"`.
+- Model defaults to `claude-opus-5` at `effort=high`. Drop to `--effort medium` to cut cost;
+  reviews get noticeably shallower below that.

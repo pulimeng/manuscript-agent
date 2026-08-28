@@ -1,0 +1,19 @@
+[project]
+name = "manuscript-agent"
+version = "0.1.0"
+description = "Agentic write -> submit -> review -> revise -> resubmit loop for manuscripts."
+requires-python = ">=3.9"
+dependencies = [
+    "anthropic>=0.125",
+    "pydantic>=2.0",
+]
+
+[project.optional-dependencies]
+openai = ["openai>=2.0"]
+
+[project.scripts]
+manuscript-agent = "manuscript_agent.cli:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"

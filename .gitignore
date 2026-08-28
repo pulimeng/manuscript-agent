@@ -1,0 +1,18 @@
+# Python
+__pycache__/
+*.egg-info/
+.venv/
+
+# credentials
+.env
+
+# run output and build artefacts
+runs/
+.manuscript-build/
+
+# your own manuscripts — unpublished work, never commit
+ms/
+*.revised/
+
+# macOS
+.DS_Store

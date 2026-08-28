@@ -1,0 +1,7 @@
+{
+  "name": "Journal of Clinical Informatics (custom profile)",
+  "scope": "Applied machine learning in clinical settings, with an emphasis on deployment.",
+  "acceptance_bar": "External validation on at least one held-out site, an error analysis that names the failure modes, and an explicit statement of what would be needed before clinical use. Retrospective-only work is publishable but must not use causal language.",
+  "review_form": "Summary, major compulsory revisions, minor revisions, statistical review, data availability check, recommendation.",
+  "length_guidance": "~5000 words, structured abstract, up to 5 display items."
+}
