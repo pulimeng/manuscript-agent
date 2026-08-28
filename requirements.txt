@@ -1,0 +1,6 @@
+# Pinned to the versions this was developed and tested against.
+# pyproject.toml holds the supported ranges; this file is for reproducing the dev env:
+#   python3 -m venv .venv && .venv/bin/pip install -r requirements.txt && .venv/bin/pip install -e .
+anthropic==0.125.0
+openai==2.48.0
+pydantic==2.13.4

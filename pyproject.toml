@@ -3,16 +3,25 @@ name = "manuscript-agent"
 version = "0.1.0"
 description = "Agentic write -> submit -> review -> revise -> resubmit loop for manuscripts."
 requires-python = ">=3.9"
+# Both provider SDKs are required: the default casting puts the author on OpenAI and
+# the reviewers and editor on Claude. See DEFAULT_*_MODEL in manuscript_agent/config.py.
 dependencies = [
     "anthropic>=0.125",
+    "openai>=2.0",
     "pydantic>=2.0",
 ]
 
 [project.optional-dependencies]
-openai = ["openai>=2.0"]
+# kept so `pip install ".[openai]"` from older instructions still resolves
+openai = []
 
 [project.scripts]
 manuscript-agent = "manuscript_agent.cli:main"
+
+# Without this, setuptools' flat-layout discovery treats sibling working directories
+# (ms/, runs/) as importable packages and the build fails.
+[tool.setuptools.packages.find]
+include = ["manuscript_agent*"]
 
 [build-system]
 requires = ["setuptools>=68"]

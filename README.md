@@ -17,15 +17,29 @@ Three agents, one file:
 
 The loop runs until the editor accepts, rejects, or the round budget runs out.
 
+## Requirements
+
+| | |
+| --- | --- |
+| Python | 3.9 or newer |
+| Packages | `anthropic>=0.125`, `openai>=2.0`, `pydantic>=2.0` — declared in `pyproject.toml`, pinned to tested versions in `requirements.txt` |
+| LaTeX | `latexmk` + `pdflatex` (TeX Live / MacTeX) — needed to compile the PDF that gets submitted. Without it the reviewers read the sources instead; `--no-compile` forces that path. |
+| Keys | `ANTHROPIC_API_KEY` and `OPENAI_API_KEY` |
+
+Both provider SDKs are required rather than optional, because the default casting puts the
+author on OpenAI and the reviewers and editor on Claude. Cast every role on one provider with
+`--model` and you only need that provider's key — the preflight checks the roles a command
+actually uses.
+
 ## Install
 
 ```bash
-python3 -m venv .venv && .venv/bin/pip install -e .
-export ANTHROPIC_API_KEY=sk-ant-...   # or run `ant auth login`
-
-# the default author role is an OpenAI model, so both are needed
-.venv/bin/pip install -e ".[openai]"
+python3 -m venv .venv
+.venv/bin/pip install -e .                      # or: -r requirements.txt for pinned versions
+export ANTHROPIC_API_KEY=sk-ant-...             # or run `ant auth login`
 export OPENAI_API_KEY=sk-...
+
+.venv/bin/python tests/test_loop.py             # check the install; no API key needed
 ```
 
 ## Use
