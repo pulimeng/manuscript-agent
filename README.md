@@ -80,6 +80,13 @@ manuscript-agent review paper.md --topic security --adversarial -o review-report
 # the full loop
 manuscript-agent submit paper.md --rounds 3 --venue cs-conference --topic ml
 manuscript-agent submit paper.tex --rounds 4 --reviewers 4 --adversarial --topic systems --in-place
+```
+
+`--adversarial` *adds* the skeptic to the panel rather than replacing a reviewer, so
+`--reviewers 3 --adversarial` seats four: the methodologist, the domain expert, the careful
+generalist, and the skeptic.
+
+```bash
 manuscript-agent submit paper.md --venue-file examples/venue-custom.json \
                                  --topic-file examples/topic-custom.json
 ```
@@ -355,6 +362,10 @@ python tests/test_guardrails.py    # impossible request -> declined -> editor ru
 python tests/test_fabrication.py   # invented result -> detect, repair, escalate, fail
 python tests/test_package.py       # package discovery, per-file write-back, PDF submission
 ```
+
+## Licence
+
+MIT — see [LICENSE](LICENSE).
 
 ## Design notes and limits
 
