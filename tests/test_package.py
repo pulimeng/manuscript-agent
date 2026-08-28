@@ -133,4 +133,42 @@ try:
 except ValueError as e:
     assert "does not decode as UTF-8" in str(e)
 print("pdf submission ok: attachable, refuses revision, readable error on binary text load")
+
+# --- submission resolution order: .pdf -> .tex -> .md, and no Word --------
+from manuscript_agent import cli
+
+order = ROOT / "order"
+shutil.rmtree(order, ignore_errors=True); (order / "sections").mkdir(parents=True)
+(order / "main.tex").write_text("\\documentclass{article}\n\\begin{document}\nx\n\\end{document}\n")
+(order / "main.md").write_text("# Fallback\n")
+
+# sources only -> a revisable package for both commands
+assert type(cli._open(str(order))).__name__ == "Package"
+assert type(cli._open(str(order), prefer_pdf=True)).__name__ == "Package"
+
+# add a built PDF: review takes it, submit still takes the sources and recompiles
+(order / "main.pdf").write_bytes(b"%PDF-1.4\n%%EOF\n")
+assert type(cli._open(str(order), prefer_pdf=True)).__name__ == "PdfSubmission"
+assert type(cli._open(str(order))).__name__ == "Package"
+# naming the main file overrides the PDF preference
+assert type(cli._open(str(order), main=str(order / "main.tex"), prefer_pdf=True)).__name__ \
+    == "Package"
+
+# markdown only
+md_only = ROOT / "mdonly"; md_only.mkdir(parents=True, exist_ok=True)
+(md_only / "paper.md").write_text("# Paper\n")
+assert type(cli._open(str(md_only))).__name__ == "Package"
+
+# pdf only
+pdf_only = ROOT / "pdfonly"; pdf_only.mkdir(parents=True, exist_ok=True)
+(pdf_only / "main.pdf").write_bytes(b"%PDF-1.4\n%%EOF\n")
+assert type(cli._open(str(pdf_only))).__name__ == "PdfSubmission"
+
+for ext in (".docx", ".doc", ".odt", ".rtf"):
+    doc = ROOT / f"paper{ext}"; doc.write_bytes(b"PK\x03\x04")
+    try:
+        cli._open(str(doc)); raise SystemExit(f"{ext} must be refused")
+    except SystemExit as e:
+        assert "not supported" in str(e), e
+print("resolution order ok: pdf>tex>md for review, sources for submit, Word refused")
 print("PACKAGE OK")

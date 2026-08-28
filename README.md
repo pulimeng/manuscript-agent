@@ -34,13 +34,21 @@ actually uses.
 ## Install
 
 ```bash
-python3 -m venv .venv
-.venv/bin/pip install -e .                      # or: -r requirements.txt for pinned versions
-export ANTHROPIC_API_KEY=sk-ant-...             # or run `ant auth login`
+conda create -n manuscript-agent python=3.11 -y
+conda activate manuscript-agent
+pip install -e .                       # or: pip install -r requirements.txt for pinned versions
+
+export ANTHROPIC_API_KEY=sk-ant-...    # or run `ant auth login`
 export OPENAI_API_KEY=sk-...
 
-.venv/bin/python tests/test_loop.py             # check the install; no API key needed
+python tests/test_loop.py              # check the install; no API key needed
+manuscript-agent --help
 ```
+
+Put the two `export` lines in `~/.zshrc` so they survive a new shell. Anything below assumes
+the environment is active; with a plain virtualenv instead, the equivalent is
+`python3 -m venv .venv && .venv/bin/pip install -e .` and an explicit `.venv/bin/` prefix on
+each command.
 
 ## Use
 
@@ -325,11 +333,12 @@ produce — a new experiment, data they do not hold, a study they have not run.
 Three offline suites, no API key needed — they stub the model and exercise the control flow:
 
 ```bash
-.venv/bin/python tests/test_loop.py          # full loop, revision applied, artifacts written
-.venv/bin/python tests/test_build.py         # compile, attach the PDF, repair a broken build
-.venv/bin/python tests/test_providers.py     # spec parsing, request shapes, panel routing
-.venv/bin/python tests/test_guardrails.py    # impossible request -> declined -> editor rules
-.venv/bin/python tests/test_fabrication.py   # invented result -> detect, repair, escalate, fail
+python tests/test_loop.py          # full loop, revision applied, artifacts written
+python tests/test_build.py         # compile, attach the PDF, repair a broken build
+python tests/test_providers.py     # spec parsing, request shapes, panel routing
+python tests/test_guardrails.py    # impossible request -> declined -> editor rules
+python tests/test_fabrication.py   # invented result -> detect, repair, escalate, fail
+python tests/test_package.py       # package discovery, per-file write-back, PDF submission
 ```
 
 ## Design notes and limits

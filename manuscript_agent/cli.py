@@ -91,13 +91,49 @@ def _preflight(cfg, needs=("author", "editor", "reviewers")) -> None:
         )
 
 
-def _open(target: str, main: str = None):
-    """A PDF is a finished submission; a directory (or a file with \\input) is a package;
-    a lone text file is a manuscript."""
+WORD_SUFFIXES = {".docx", ".doc", ".odt", ".rtf", ".pages"}
+SUBMISSION_ORDER = (".pdf", ".tex", ".md")
+
+
+def _open(target: str, main: str = None, prefer_pdf: bool = False):
+    """Resolve what to work on.
+
+    A named file wins outright. For a directory the search order is .pdf, then .tex, then
+    .md — but only `review` takes the PDF first, because `submit` needs sources to revise
+    and compiles its own PDF from them rather than trusting one that may be stale.
+    """
     path = Path(target)
+    if path.suffix.lower() in WORD_SUFFIXES:
+        raise SystemExit(
+            f"{path.name}: Word and rich-text documents are not supported.\n"
+            "  Accepted: .pdf (review only), .tex or .md sources, or a directory holding "
+            "them.\n"
+            "  Convert with pandoc, or export a PDF to review it as submitted."
+        )
     if path.suffix.lower() == ".pdf":
         return PdfSubmission.load(path)
-    if path.is_dir() or main:
+
+    if path.is_dir():
+        if prefer_pdf and not main:
+            pdfs = _submitted_pdfs(path)
+            if pdfs:
+                if _has_sources(path):
+                    _log(
+                        f"Found {pdfs[0].name} and sources; reviewing the PDF as submitted. "
+                        f"Pass --main to compile the sources instead."
+                    )
+                return PdfSubmission.load(pdfs[0])
+        try:
+            return Package.load(path, main)
+        except PackageError as exc:
+            pdfs = _submitted_pdfs(path)
+            if pdfs:
+                return PdfSubmission.load(pdfs[0])
+            raise SystemExit(
+                f"{exc}\n  Looked for: {', '.join(SUBMISSION_ORDER)} in {path}"
+            )
+
+    if main:
         return Package.load(path, main)
     pkg = Package.load(path)
     if len(pkg.sources) > 1:
@@ -105,6 +141,17 @@ def _open(target: str, main: str = None):
              "treating the directory as a submission package")
         return pkg
     return Manuscript.load(path)
+
+
+def _submitted_pdfs(directory: Path):
+    """PDFs that look like the submission, not a figure — top level, main/paper first."""
+    pdfs = [p for p in sorted(directory.glob("*.pdf"))]
+    return sorted(pdfs, key=lambda p: (p.stem.lower() not in ("main", "paper", "manuscript"),
+                                       p.name))
+
+
+def _has_sources(directory: Path) -> bool:
+    return any(directory.rglob("*.tex")) or any(directory.rglob("*.md"))
 
 
 def cmd_write(args) -> int:
@@ -127,7 +174,7 @@ def cmd_write(args) -> int:
 def cmd_review(args) -> int:
     cfg = _config(args)
     _preflight(cfg, needs=("editor", "reviewers"))
-    ms = _open(args.manuscript, args.main)
+    ms = _open(args.manuscript, args.main, prefer_pdf=True)
     pdf = _compile(ms, cfg)
     reviews = []
     for persona, spec in zip(cfg.personas, cfg.reviewer_models):
