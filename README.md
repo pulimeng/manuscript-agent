@@ -31,6 +31,24 @@ author on OpenAI and the reviewers and editor on Claude. Cast every role on one 
 `--model` and you only need that provider's key — the preflight checks the roles a command
 actually uses.
 
+## Accepted formats
+
+| given | treated as |
+| --- | --- |
+| `.pdf` | a finished submission — reviewable, not revisable (there are no sources to edit) |
+| `.tex` | LaTeX sources; compiled to the PDF that gets submitted |
+| `.md` | Markdown sources; reviewed as text, since there is nothing to compile |
+| a directory | resolved in that order: `.pdf`, then `.tex`, then `.md` |
+| `.docx`, `.doc`, `.odt`, `.rtf`, `.pages` | **not supported** — convert with pandoc, or export a PDF to review it as submitted |
+
+`.txt` and `.rst` also load, as plain text.
+
+One deliberate exception to the order: when a directory holds **both** a PDF and sources,
+`review` takes the PDF (it is the submission, and reviewing it costs nothing to build) while
+`submit` takes the sources and compiles a fresh PDF — submitting a stale export after a
+revision would show reviewers the wrong paper. Naming a file directly, or passing `--main`,
+overrides the search either way.
+
 ## Install
 
 ```bash
@@ -68,9 +86,6 @@ manuscript-agent submit paper.md --venue-file examples/venue-custom.json \
 
 Without `--in-place`, `submit` works on a copy — `paper.revised.md`, or `mypaper.revised/`
 for a package — and leaves your original alone.
-
-`.md`, `.tex`, `.txt` and `.rst` are all handled; the extension picks the format the author
-agent is told to emit.
 
 ## Submission packages
 
@@ -138,7 +153,7 @@ complete, compilable packages rather than single files.
 
 ## What you get
 
-Each run writes to `runs/<paper>-<timestamp>/`:
+Each run writes to `runs/<paper>-<timestamp>/` (`--outdir` moves that elsewhere):
 
 ```
 round-1/
