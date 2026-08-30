@@ -22,6 +22,9 @@ from .llm import Attachment
 from .manuscript import diff, strip_fence
 
 TEXT_SUFFIXES = {".tex", ".md", ".markdown", ".txt", ".rst", ".cls", ".sty"}
+# what the author is allowed to rewrite. The bibliography is a source file: answering
+# "engage with prior work X" means adding an entry as well as a \cite.
+WRITABLE_SUFFIXES = TEXT_SUFFIXES | {".bib"}
 ASSET_SUFFIXES = {".pdf", ".png", ".jpg", ".jpeg", ".eps", ".svg", ".gif", ".tif", ".tiff",
                   ".csv", ".tsv", ".xlsx", ".json"}
 
@@ -189,23 +192,44 @@ class Package:
     # -- applying a revision ----------------------------------------------
 
     def replace(self, emitted: str) -> str:
-        """Write back each FILE block. Returns a combined diff across changed files."""
+        """Write back each FILE block, all or nothing.
+
+        Every path is validated before anything is written, and a failure part-way through
+        rolls the package back — a half-applied revision is worse than none, because the
+        next round would review a document the author never intended.
+        """
         blocks = list(FILE_BLOCK.finditer(strip_fence(emitted)))
         if not blocks:
             raise PackageError(
                 "the author emitted no FILE blocks; nothing was written to the package"
             )
-        diffs: List[str] = []
+
+        planned = []
         for m in blocks:
             rel = m.group("path").strip()
-            target = self._safe_path(rel)
-            body = m.group("body").rstrip("\n") + "\n"
-            old = target.read_text(errors="replace") if target.exists() else ""
-            if old == body:
-                continue
-            target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_text(body)
-            diffs.append(diff(old, body, rel))
+            planned.append((rel, self._safe_path(rel), m.group("body").rstrip("\n") + "\n"))
+
+        backup = {
+            target: (target.read_text(errors="replace") if target.exists() else None)
+            for _, target, _ in planned
+        }
+        diffs: List[str] = []
+        try:
+            for rel, target, body in planned:
+                old = backup[target] or ""
+                if old == body:
+                    continue
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_text(body)
+                diffs.append(diff(old, body, rel))
+        except Exception:
+            for target, original in backup.items():
+                if original is None:
+                    target.unlink(missing_ok=True)
+                else:
+                    target.write_text(original)
+            raise
+
         self._discover()  # a new \input or figure reference changes the package
         return "".join(diffs)
 
@@ -213,8 +237,11 @@ class Package:
         candidate = (self.root / rel).resolve()
         if self.root not in candidate.parents and candidate != self.root:
             raise PackageError(f"refusing to write outside the package: {rel}")
-        if candidate.suffix.lower() not in TEXT_SUFFIXES:
-            raise PackageError(f"refusing to write a non-source file: {rel}")
+        if candidate.suffix.lower() not in WRITABLE_SUFFIXES:
+            raise PackageError(
+                f"refusing to write a non-source file: {rel} "
+                f"(writable: {', '.join(sorted(WRITABLE_SUFFIXES))})"
+            )
         return candidate
 
     def save(self) -> None:

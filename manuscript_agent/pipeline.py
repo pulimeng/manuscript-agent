@@ -180,13 +180,18 @@ class SubmissionPipeline:
 
     # -- integrity -------------------------------------------------------
 
-    def _integrity_report(self, manuscript, before: str) -> IntegrityReport:
-        """Unsourced values, plus figures and data the text now cites but the package lacks."""
+    def _integrity_report(self, manuscript, before: str, citations) -> IntegrityReport:
+        """Unsourced values, plus figures and data the text now cites but the package lacks.
+
+        `citations` are the bibliography keys as they stood *before* the revision. The author
+        may edit the .bib, so reading the keys afterwards would let a fabricated entry
+        authorise its own citation.
+        """
         report = check(
             before,
             manuscript.text,
             self.config.ignore_integers_below,
-            known_citations=manuscript.known_citations,
+            known_citations=citations,
         )
         for asset in manuscript.missing_assets():
             report.violations.append(
@@ -199,9 +204,9 @@ class SubmissionPipeline:
             )
         return report
 
-    def _verify(self, manuscript: Manuscript, before: str, rd: Path) -> List[str]:
+    def _verify(self, manuscript, before: str, rd: Path, citations) -> List[str]:
         """Flag values with no antecedent in the reviewed version; try once to repair."""
-        report = self._integrity_report(manuscript, before)
+        report = self._integrity_report(manuscript, before, citations)
         if not report:
             return []
 
@@ -219,7 +224,7 @@ class SubmissionPipeline:
             self.on_event("  author correcting unsourced values...")
             corrected = self.author.fix_unsourced(manuscript, report.render())
             manuscript.replace(corrected)
-            report = self._integrity_report(manuscript, before)
+            report = self._integrity_report(manuscript, before, citations)
             (rd / "integrity.md").write_text(report.render())
             if not report:
                 self.on_event("  INTEGRITY: cleared after correction")
@@ -314,9 +319,10 @@ class SubmissionPipeline:
 
             self.on_event(f"  author revising ({len(plan.items)} planned edits)...")
             before = manuscript.text
+            citations_before = set(manuscript.known_citations)
             revised = self.author.revise(manuscript, plan, meta)
             manuscript.replace(revised)
-            integrity = self._verify(manuscript, before, rd)
+            integrity = self._verify(manuscript, before, rd, citations_before)
             # after any correction pass, so the response letter cites the text that shipped
             diff = text_diff(before, manuscript.text, manuscript.path.name)
             manuscript.save()

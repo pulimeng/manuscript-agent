@@ -171,4 +171,24 @@ for ext in (".docx", ".doc", ".odt", ".rtf"):
     except SystemExit as e:
         assert "not supported" in str(e), e
 print("resolution order ok: pdf>tex>md for review, sources for submit, Word refused")
+
+# --- the bibliography is writable, and write-back is all-or-nothing ------
+pkg = build()
+(ROOT / "refs.bib").write_text("@article{smith2019,t={A}}\n")
+pkg = Package.load(ROOT)
+d = pkg.replace("%%% FILE: refs.bib %%%\n@article{smith2019,t={A}}\n"
+                "@article{new2024,t={N}}\n%%% END FILE: refs.bib %%%")
+assert "refs.bib" in d and "new2024" in pkg.known_citations, "the .bib must be writable"
+
+intro_before = (ROOT / "sections/intro.tex").read_text()
+try:
+    pkg.replace("%%% FILE: sections/intro.tex %%%\nCLOBBERED\n"
+                "%%% END FILE: sections/intro.tex %%%\n"
+                "%%% FILE: figs/fake.pdf %%%\nx\n%%% END FILE: figs/fake.pdf %%%")
+    raise SystemExit("a bad path in any block must reject the whole revision")
+except PackageError:
+    pass
+assert (ROOT / "sections/intro.tex").read_text() == intro_before, \
+    "a rejected revision must leave every file untouched"
+print("bib writable; a bad block rolls the whole revision back")
 print("PACKAGE OK")
