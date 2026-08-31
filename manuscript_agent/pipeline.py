@@ -111,6 +111,52 @@ def dropped_prior_points(
     return out
 
 
+def panel_correlation(specs) -> str:
+    """Say plainly when the panel is one model wearing four hats.
+
+    Four samples from the same model are correlated draws, not four opinions. The editor is
+    told so it cannot read agreement as corroboration.
+    """
+    names = [str(s) for s in specs]
+    families = {n.split(":")[0] for n in names}   # provider is the family here
+    if len(set(names)) == 1:
+        return (
+            f"All {len(names)} reviewers are the same model ({names[0]}) under different "
+            "persona prompts. Their reviews are correlated samples, not independent "
+            "opinions: agreement between them is weak evidence, and a point raised by three "
+            "of them is not three times as likely to be right."
+        )
+    if len(families) == 1:
+        return (
+            f"All {len(names)} reviewers come from one model family "
+            f"({', '.join(sorted(families))}): {', '.join(sorted(set(names)))}. Treat "
+            "agreement between them as partially correlated rather than independent."
+        )
+    return (
+        "The panel spans more than one model family "
+        f"({', '.join(sorted(families))}), so agreement between reviewers from different "
+        "families carries more weight than agreement within one."
+    )
+
+
+def overweighted_reviews(reviews: List[ScoredReview], limit: int = 2) -> List[str]:
+    """Reviewers that named more than `limit` decision-critical weaknesses, or none."""
+    out = []
+    for sr in reviews:
+        chosen = sr.review.decision_critical
+        labels = {p.label for p in sr.review.points}
+        if len(chosen) > limit:
+            out.append(
+                f"{sr.reviewer_id} named {len(chosen)} decision-critical points "
+                f"({', '.join(chosen)}); at most {limit} were asked for"
+            )
+        for label in chosen:
+            if label not in labels:
+                out.append(f"{sr.reviewer_id} marked {label} decision-critical but raised no "
+                           f"such point")
+    return out
+
+
 def misanchored_points(reviews: List[ScoredReview], vid: str) -> List[str]:
     """Criticisms that name a version other than the one under review."""
     out = []
@@ -179,13 +225,19 @@ class SubmissionPipeline:
                 changes=changes,
             )
             r = sr.review
+            asks = ", ".join(
+                f"{n}x {a}" for a, n in sorted(
+                    __import__("collections").Counter(p.ask for p in r.points).items()
+                )
+            )
             carried = ""
             if r.prior_points:
                 resolved = sum(1 for p in r.prior_points if p.verdict == "resolved")
                 carried = f", {resolved}/{len(r.prior_points)} prior points resolved"
             self.on_event(
-                f"  {persona.id} -> {r.recommendation} "
-                f"(overall {r.overall}/10, {len(r.points)} points{carried})"
+                f"  {persona.id} -> {r.recommendation} (overall {r.overall}/10, "
+                f"{len(r.points)} points{carried})"
+                + (f"\n      {asks}" if asks else "")
             )
             return sr
 
@@ -292,6 +344,7 @@ class SubmissionPipeline:
                 json.dumps([r.model_dump() for r in reviews], indent=2)
             )
             misanchored = misanchored_points(reviews, version.vid)
+            misanchored += overweighted_reviews(reviews)
             dropped = dropped_prior_points(reviews, previous_labels)
             if dropped:
                 (rd / "dropped-points.md").write_text("\n".join(dropped) + "\n")
@@ -318,6 +371,7 @@ class SubmissionPipeline:
                 pdf=pdf,
                 checks=baseline.render(),
                 misanchored=misanchored,
+                correlation=panel_correlation(self.config.reviewer_models),
             )
             (rd / "meta-review.md").write_text(meta_md(meta))
             (rd / "meta-review.json").write_text(json.dumps(meta.model_dump(), indent=2))

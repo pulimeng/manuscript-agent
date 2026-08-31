@@ -25,6 +25,8 @@ from .pipeline import (
     PromotionRefused,
     dropped_prior_points,
     misanchored_points,
+    overweighted_reviews,
+    panel_correlation,
 )
 from .pipeline import SubmissionPipeline
 from .render import meta_md, reviews_md
@@ -235,21 +237,25 @@ def cmd_review(args) -> int:
             pdf=pdf, stamp=version.stamp(), artifacts=artifacts, changes=changes,
         )
         r = sr.review
+        critical = ", ".join(r.decision_critical) or "none named"
         carried = ""
         if r.prior_points:
             done = sum(1 for x in r.prior_points if x.verdict == "resolved")
             carried = f", {done}/{len(r.prior_points)} prior points resolved"
         _log(f"  -> {r.recommendation} (overall {r.overall}/10, "
              f"{len(r.points)} points{carried})")
+        _log(f"     decision-critical: {critical}")
         reviews.append(sr)
 
-    misanchored = misanchored_points(reviews, version.vid)
+    misanchored = misanchored_points(reviews, version.vid) + overweighted_reviews(reviews)
     dropped = dropped_prior_points(reviews, history.previous_labels())
+    correlation = panel_correlation(cfg.reviewer_models)
     _log("editor adjudicating...")
     meta = EditorAgent(build(cfg.editor_model), cfg.venue).decide(
         pkg, reviews, history.next_number(), history.next_number(),
         history=history.decision_history(), response_letter=letter,
         pdf=pdf, checks=checks.render(), misanchored=misanchored + dropped,
+        correlation=correlation,
     )
     _log(f"editor -> {meta.decision.upper()}")
 

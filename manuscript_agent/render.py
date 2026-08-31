@@ -28,18 +28,30 @@ def review_md(sr: ScoredReview) -> str:
         for pp in r.prior_points:
             lines.append(f"- `{pp.label}` — **{pp.verdict}**: {pp.evidence}")
         lines += ["", f"*Score change:* {r.score_change}", ""]
-    for kind, title in (
-        ("strength", "Strengths"),
-        ("weakness", "Weaknesses"),
-        ("question", "Questions to the authors"),
-        ("minor", "Minor points"),
+    if r.decision_critical:
+        chosen = [p for p in r.points if p.label in r.decision_critical]
+        lines += ["**Decision-critical**", ""]
+        for p in chosen:
+            lines.append(f"- `{sr.reviewer_id}-{p.label}` ({p.ask}) — {p.comment}")
+        lines.append("")
+
+    for ask, title in (
+        ("fatal", "Fatal"),
+        ("revision", "Revision required"),
+        ("clarification", "Clarifications"),
+        ("optional_experiment", "Optional experiments"),
     ):
-        pts = [p for p in r.points if p.kind == kind]
+        pts = [p for p in r.points if p.ask == ask]
         if not pts:
             continue
         lines += [f"**{title}**", ""]
         for p in pts:
             where = f"{p.section}" + (f", p.{p.page}" if p.page else "")
+            marks = []
+            if p.verification != "verified_in_manuscript":
+                marks.append(p.verification.replace("_", " "))
+            if p.resolvable_by_rewording:
+                marks.append("resolvable by rewording")
             flag = (
                 "  [reviewer access limit, not an author gap]"
                 if p.artifact_status == "provided_but_i_could_not_access"
@@ -47,10 +59,13 @@ def review_md(sr: ScoredReview) -> str:
                 if p.artifact_status == "authors_did_not_provide"
                 else ""
             )
+            tail = f"  [{'; '.join(marks)}]" if marks else ""
             lines.append(
-                f"- `{sr.reviewer_id}-{p.label}` ({p.severity}, {p.version}, {where}) — "
-                f"{p.comment}{flag}"
+                f"- `{sr.reviewer_id}-{p.label}` ({p.version}, {where}) — {p.comment}"
+                f"{flag}{tail}"
             )
+            if p.evidence:
+                lines.append(f"    - checked: {p.evidence}")
         lines.append("")
     return "\n".join(lines)
 

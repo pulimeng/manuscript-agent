@@ -14,9 +14,10 @@ class StubLLM:
     def parse(self, system, prompt, schema, max_tokens=16000):
         assert any(t in prompt for t in ("<manuscript", "<revised_manuscript", "<reviews>"))
         if schema is Review:
-            return Review(version_reviewed=VID["v"], summary="s", prior_points=[],
+            return Review(version_reviewed=VID["v"], summary="s", decision_critical=["W1"],
+                          prior_points=[],
                           score_change="n/a", points=[ReviewPoint(label="W1", kind="weakness", version=VID["v"], page=1,
-                          artifact_status="not_applicable", section="§3", comment="c", severity="major")], soundness=3,
+                          artifact_status="not_applicable", section="§3", comment="c", ask="revision", evidence="p.2", verification="verified_in_manuscript", resolvable_by_rewording=False)], soundness=3,
                           novelty=3, clarity=3, overall=5, confidence=4,
                           recommendation="major_revision")
         if schema is MetaReview:

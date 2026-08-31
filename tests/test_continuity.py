@@ -15,7 +15,7 @@ ROOT = Path(sys.argv[1] if len(sys.argv) > 1 else "/tmp") / "ma-test-continuity"
 def point(label, comment, page=2):
     return ReviewPoint(label=label, kind="weakness", version="v1", page=page,
                        artifact_status="not_applicable", section="§3",
-                       comment=comment, severity="major")
+                       comment=comment, ask="revision", evidence="p.2", verification="verified_in_manuscript", resolvable_by_rewording=False)
 
 
 class Stub:
@@ -34,7 +34,7 @@ class Stub:
                                            evidence="§3 now reports the ablation")]
             return Review(
                 version_reviewed="v1" if first else "v2",
-                summary="s",
+                summary="s", decision_critical=["W1"],
                 prior_points=prior,
                 score_change="n/a" if first else "the ablation landed",
                 points=[point("W1", "THE ABLATION IS MISSING"),
@@ -103,7 +103,7 @@ print("dropped prior point flagged:", [m for m in res.rounds[1].misanchored if "
 
 # --- and the detector itself ---------------------------------------------
 sr = ScoredReview(reviewer_id="R1", persona="p", review=Review(
-    version_reviewed="v2", summary="s",
+    version_reviewed="v2", summary="s", decision_critical=[],
     prior_points=[PriorPointVerdict(label="W1", verdict="unresolved", evidence="§3")],
     score_change="held", points=[], soundness=3, novelty=3, clarity=3, overall=4,
     confidence=4, recommendation="major_revision"))

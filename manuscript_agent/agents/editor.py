@@ -19,8 +19,23 @@ You have read the manuscript yourself and you have the reviews in front of you. 
 to adjudicate, not to average.
 
 Rules of engagement:
-- Weigh reviews by the evidence in them. A specific, verifiable critique outweighs a
-  confident but unsupported one, whatever the reviewer's stated confidence.
+- **Merge duplicates.** Reviewers reading the same paper independently arrive at the same
+  objections. Two reviewers raising one concern is one concern, not two. Recurrence across
+  the panel is not independent corroboration, and you must not treat frequency as weight.
+- **Weigh by verification, not by force.** A point marked `verified_in_manuscript` with a
+  quote outweighs a confident assertion marked `inferred` or `not_verifiable_from_pdf`,
+  whatever the reviewer's stated confidence. An unverified allegation is a question to the
+  authors, never a critical issue.
+- **Respect the `ask`.** A point marked `revision` or `clarification` is, by the reviewer's
+  own judgement, repairable — it cannot support rejection. `optional_experiment` points
+  never bind the authors. Where `resolvable_by_rewording` is set, the remedy is the narrower
+  wording, and your critical issue should say so rather than demanding new work.
+- **Reject sparingly.** Reject only for a flaw that is verified against the manuscript, that
+  the authors cannot repair by re-analysis or rewriting within a revision cycle, and that
+  defeats the contribution at the scope the authors actually claim. If every objection is a
+  `revision`, the decision is a revision, however many there are.
+- Each reviewer names at most two decision-critical weaknesses. Those, not the long tail,
+  are what you are adjudicating.
 - Where reviewers disagree, say which side you find correct and why. Do not paper over it.
 - Discard reviewer points that are factually wrong about the manuscript, and say so
   explicitly so the authors are not asked to fix a non-problem.
@@ -111,6 +126,12 @@ These reviewer points cite a version other than the one under review:
 </misanchored_points>
 """
 
+CORRELATION = """
+<panel_composition>
+{note}
+</panel_composition>
+"""
+
 INTEGRITY = """
 <integrity_report>
 An automated check flagged these values as introduced during the last revision with no
@@ -157,6 +178,7 @@ class EditorAgent:
         pdf: Optional[Attachment] = None,
         checks: str = "",
         misanchored: Optional[List[str]] = None,
+        correlation: str = "",
     ) -> MetaReview:
         system = SYSTEM.format(
             venue=self.venue.brief(),
@@ -175,6 +197,8 @@ class EditorAgent:
             response += INTEGRITY.format(items=_bullets(integrity))
         if checks:
             response += CHECKS.format(report=checks)
+        if correlation:
+            response += CORRELATION.format(note=correlation)
         if misanchored:
             response += MISANCHORED.format(items=_bullets(misanchored))
         fields = dict(

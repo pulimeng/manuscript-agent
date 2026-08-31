@@ -26,9 +26,10 @@ class StubLLM:
     def __init__(self, repair): self.repair, self.editor_prompts, self.calls = repair, [], []
     def parse(self, system, prompt, schema, max_tokens=16000):
         if schema is Review:
-            return Review(version_reviewed=VID["v"], summary="s", prior_points=[],
+            return Review(version_reviewed=VID["v"], summary="s", decision_critical=["W1"],
+                          prior_points=[],
                           score_change="n/a", points=[ReviewPoint(label="W1", kind="weakness", version=VID["v"], page=1,
-                          artifact_status="not_applicable", section="§3", comment="no retrieval ablation", severity="blocking")],
+                          artifact_status="not_applicable", section="§3", comment="no retrieval ablation", ask="fatal", evidence="p.2", verification="verified_in_manuscript", resolvable_by_rewording=False)],
                           soundness=2, novelty=3, clarity=4, overall=4, confidence=4,
                           recommendation="major_revision")
         if schema is MetaReview:

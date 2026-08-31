@@ -13,8 +13,10 @@ manuscript-agent review ./paper --adversarial --letter response.md   # round 2
 Nothing writes to your manuscript. The agents produce critique; the writing stays yours.
 
 - **Reviewers** — independent personas (methodologist, domain expert, careful generalist,
-  and an adversarial skeptic under `--adversarial`), each producing a structured review with
-  per-point severities, scores, and the version and page every point refers to.
+  and an adversarial skeptic under `--adversarial`). Each names **at most two**
+  decision-critical weaknesses and labels every point with what it actually asks for —
+  `fatal`, `revision`, `clarification` or `optional_experiment` — plus the evidence it
+  checked and whether the point is resolvable by rewording.
 - **Editor** — adjudicates rather than averages, discards reviewer points that are wrong
   about the manuscript, and issues `accept` / `minor_revision` / `major_revision` / `reject`.
 - **Author** *(optional)* — only in `submit`, the fully automatic loop, where it proposes
@@ -404,6 +406,36 @@ never to turn one into a critical issue. Those points are listed in `artifact-ac
 
 Everything above stays readable: versions are real packages, patches are standard unified
 diffs, and every report is markdown or JSON.
+
+## Review calibration
+
+A reviewer that files twenty equally weighted objections has told the editor nothing. The
+review schema is built to prevent that:
+
+| | |
+| --- | --- |
+| `decision_critical` | at most two labels — the points that actually drive the recommendation. More than two, or a label with no matching point, is reported to the editor. |
+| `ask` | `fatal` (no revision repairs it) · `revision` (rewriting or re-analysis fixes it) · `clarification` (could not tell from the text) · `optional_experiment` (would strengthen it; not required) |
+| `evidence` + `verification` | what was checked and whether it was `verified_in_manuscript`, `not_verifiable_from_pdf`, or `inferred`. An unverified allegation may not be `fatal`. |
+| `resolvable_by_rewording` | set when scoping the claim to its evidence would resolve the objection, so the remedy is a sentence rather than a new study |
+
+Reviewers are told to judge each claim **at its stated scope** rather than the broadest
+reading the wording admits, and to ask whether a narrower claim, an existing number or a
+limitation would settle the concern before demanding an experiment.
+
+The editor is told to **merge duplicates** — two reviewers raising one concern is one
+concern — to weigh points by verification rather than by force, to treat `revision` and
+`clarification` points as by definition repairable, and to reject only for a verified flaw
+that cannot be repaired within a revision cycle at the scope the authors claim.
+
+**Panel correlation is stated explicitly.** Four reviewers on one model are correlated
+samples, not four opinions, and the editor is told so in as many words. Split the panel to
+get real independence:
+
+```bash
+manuscript-agent review ./paper --reviewers 4 \
+  --reviewer-model claude-opus-5 --reviewer-model openai:gpt-5.4
+```
 
 ## Guardrails in the automatic loop
 

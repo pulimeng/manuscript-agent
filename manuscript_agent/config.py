@@ -59,6 +59,22 @@ DEFAULT_EDITOR_MODEL = "claude:claude-opus-5"
 
 
 VENUES: dict[str, Venue] = {
+    "iclr": Venue(
+        name="ICLR (a top-tier machine learning conference)",
+        scope="Representation learning and machine learning broadly, including empirical, "
+              "methodological and benchmark contributions.",
+        acceptance_bar=(
+            "A contribution the community can build on, supported by evidence at the scope "
+            "the authors claim. Papers with real weaknesses are routinely accepted when the "
+            "central claim holds; rejection is for claims the evidence cannot support."
+        ),
+        review_form=(
+            "Summary, strengths, weaknesses, questions to the authors, per-axis scores "
+            "(soundness, novelty, clarity), overall rating and confidence."
+        ),
+        length_guidance="9 pages of main text; references and appendices do not count "
+                        "toward it.",
+    ),
     "cs-conference": Venue(
         name="A selective computer science conference (~20% acceptance)",
         scope="Empirical and methodological work in computer science and machine learning.",

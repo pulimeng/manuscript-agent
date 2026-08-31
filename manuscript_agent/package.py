@@ -177,8 +177,12 @@ class Package:
         items = self.artifacts()
         if not items:
             return (
-                "No code, data or repository link is shipped with this submission or named "
-                "in its text. Absence here means the authors did not provide it."
+                "No code, data or repository link is visible in the review package or named "
+                "in the text you were given. That is a fact about this package, not about "
+                "what the authors hold: artifacts are often submitted through a separate "
+                "channel, withheld for anonymity, or promised on acceptance. If the "
+                "manuscript states an availability plan, judge that statement. Do not assert "
+                "that the authors have no artifact."
             )
         return (
             "The submission ships or names the following artifacts. You are reading the PDF "
@@ -497,8 +501,12 @@ class PdfSubmission:
         items = self.artifacts()
         if not items:
             return (
-                "No code, data or repository link is shipped with this submission or named "
-                "in its text. Absence here means the authors did not provide it."
+                "No code, data or repository link is visible in the review package or named "
+                "in the text you were given. That is a fact about this package, not about "
+                "what the authors hold: artifacts are often submitted through a separate "
+                "channel, withheld for anonymity, or promised on acceptance. If the "
+                "manuscript states an availability plan, judge that statement. Do not assert "
+                "that the authors have no artifact."
             )
         return (
             "The submission ships or names the following artifacts. You are reading the PDF "

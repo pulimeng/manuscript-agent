@@ -20,13 +20,13 @@ class Stub:
             PROMPTS.append(prompt)
             first = "You reviewed an earlier version" not in prompt
             return Review(
-                version_reviewed="v1" if first else "v2", summary="s",
+                version_reviewed="v1" if first else "v2", summary="s", decision_critical=["W1"],
                 prior_points=[] if first else [PriorPointVerdict(
                     label="W1", verdict="resolved", evidence="the ablation is now in §2")],
                 score_change="n/a" if first else "the ablation landed",
                 points=[ReviewPoint(label="W1", kind="weakness", version="v1", page=1,
                                     artifact_status="not_applicable", section="§2",
-                                    comment="NO ABLATION", severity="major")] if first else [],
+                                    comment="NO ABLATION", ask="revision", evidence="p.2", verification="verified_in_manuscript", resolvable_by_rewording=False)] if first else [],
                 soundness=3, novelty=3, clarity=3, overall=4 if first else 7,
                 confidence=4, recommendation="major_revision" if first else "accept")
         return MetaReview(summary="m", consensus_strengths=["a"],
