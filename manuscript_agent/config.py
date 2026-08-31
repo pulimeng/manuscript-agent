@@ -18,6 +18,7 @@ class Venue:
     acceptance_bar: str
     review_form: str
     length_guidance: str = "No hard limit; match the norms of the venue."
+    page_limit: Optional[int] = None  # enforced mechanically on every candidate
 
     @staticmethod
     def load(path: str | Path) -> "Venue":
@@ -34,6 +35,7 @@ class Venue:
             f"Acceptance bar: {self.acceptance_bar}\n"
             f"Review form: {self.review_form}\n"
             f"Length: {self.length_guidance}"
+            + (f"\nHard page limit: {self.page_limit}" if self.page_limit else "")
         )
 
 
@@ -68,6 +70,7 @@ VENUES: dict[str, Venue] = {
             "(soundness, novelty, clarity), overall rating and confidence."
         ),
         length_guidance="8 pages of main text plus unlimited appendix.",
+        page_limit=10,
     ),
     "biomed-journal": Venue(
         name="A mid-to-high tier biomedical journal",
@@ -92,6 +95,7 @@ VENUES: dict[str, Venue] = {
         ),
         review_form="Summary, strengths, weaknesses, recommendation.",
         length_guidance="4 pages.",
+        page_limit=5,
     ),
 }
 
@@ -184,6 +188,7 @@ class RunConfig:
     model: Optional[str] = None  # set to cast one model in every role
     effort: str = "high"
     on_fabrication: str = "retry"  # "warn" | "retry" | "fail"
+    promote: str = "auto"              # "auto" (checks gate) | "manual" (patch only)
     compile_pdf: bool = True           # submit the compiled PDF, as a venue would receive it
     engine: str = "pdflatex"
     ignore_integers_below: int = 0

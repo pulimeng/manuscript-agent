@@ -12,6 +12,8 @@ def review_md(sr: ScoredReview) -> str:
     lines = [
         f"### Reviewer {sr.reviewer_id} — {sr.persona}",
         "",
+        f"*Reviewing {r.version_reviewed}*",
+        "",
         f"**Recommendation:** {r.recommendation}  ",
         f"**Scores:** soundness {r.soundness}/5 · novelty {r.novelty}/5 · "
         f"clarity {r.clarity}/5 · overall {r.overall}/10 · confidence {r.confidence}/5",
@@ -32,8 +34,17 @@ def review_md(sr: ScoredReview) -> str:
             continue
         lines += [f"**{title}**", ""]
         for p in pts:
+            where = f"{p.section}" + (f", p.{p.page}" if p.page else "")
+            flag = (
+                "  [reviewer access limit, not an author gap]"
+                if p.artifact_status == "provided_but_i_could_not_access"
+                else "  [artifact not provided]"
+                if p.artifact_status == "authors_did_not_provide"
+                else ""
+            )
             lines.append(
-                f"- `{sr.reviewer_id}-{p.label}` ({p.severity}, {p.section}) — {p.comment}"
+                f"- `{sr.reviewer_id}-{p.label}` ({p.severity}, {p.version}, {where}) — "
+                f"{p.comment}{flag}"
             )
         lines.append("")
     return "\n".join(lines)

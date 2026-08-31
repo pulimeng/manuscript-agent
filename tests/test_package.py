@@ -71,17 +71,20 @@ for bad, why in (
 print("guards ok: path escape, binary write, missing markers all rejected")
 
 # --- through the pipeline ------------------------------------------------
+VID = {"v": "v1"}
+
+
 class StubLLM:
     """Cites a real .bib key, invents a number, and references a figure it cannot create."""
     def parse(self, system, prompt, schema, max_tokens=16000):
         if schema is Review:
             assert "<package_manifest>" in prompt and "%%% FILE: sections/" in prompt
-            return Review(summary="s", points=[ReviewPoint(label="W1", kind="weakness",
-                          section="§2", comment="no ROC", severity="major")], soundness=3,
+            return Review(version_reviewed=VID["v"], summary="s", points=[ReviewPoint(label="W1", kind="weakness", version=VID["v"], page=1,
+                          artifact_status="not_applicable", section="§2", comment="no ROC", severity="major")], soundness=3,
                           novelty=3, clarity=3, overall=5, confidence=4,
                           recommendation="major_revision")
         if schema is MetaReview:
-            return MetaReview(summary="m", consensus_strengths=["a"],
+            return MetaReview(version_reviewed=VID["v"], summary="m", consensus_strengths=["a"],
                               critical_issues=["add ROC analysis"], optional_issues=[],
                               decision="major_revision", rationale="r", guidance_to_authors=["g"])
         if schema is RevisionPlan:
@@ -107,8 +110,9 @@ assert flags == ["0.93", "figures/roc.pdf"], flags  # nothing but the two real f
 assert "jones2021" not in flags, flags             # real .bib key not accused
 # the run directory lives inside the package here: its snapshots must not leak into the view
 assert not any(f.startswith("2026") or f.isdigit() and len(f) > 5 for f in flags), flags
-snap = res.rounds[0].directory / "submitted"
-assert (snap / "sections/intro.tex").exists() and (snap / "figures/arch.pdf").exists()
+v1 = res.versions[0].root
+assert (v1 / "sections/intro.tex").exists() and (v1 / "figures/arch.pdf").exists()
+assert (res.rounds[0].directory / "revision.patch").exists()
 print("\npipeline ok — flagged:", flags)
 
 # --- a PDF with no sources: reviewable, not revisable --------------------

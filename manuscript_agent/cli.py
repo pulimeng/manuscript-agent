@@ -15,7 +15,7 @@ from .manuscript import Manuscript, strip_fence
 from .build import BuildError, available as tex_available, compile_pdf
 from .llm import Attachment, RefusalError, TruncatedError
 from .package import Package, PackageError, PdfSubmission
-from .pipeline import FabricationError
+from .pipeline import FabricationError, PromotionRefused
 from .pipeline import SubmissionPipeline
 from .render import meta_md, reviews_md
 from .providers import ModelSpec, build
@@ -47,6 +47,7 @@ def _config(args) -> RunConfig:
         venue=_venue(args),
         topic=_topic(args),
         on_fabrication=getattr(args, "on_fabrication", "retry"),
+        promote=getattr(args, "promote", "auto"),
         compile_pdf=not getattr(args, "no_compile", False),
         engine=getattr(args, "engine", "pdflatex"),
         ignore_integers_below=getattr(args, "ignore_integers_below", 0),
@@ -319,6 +320,15 @@ def build_parser() -> argparse.ArgumentParser:
         "--in-place", action="store_true", help="revise the file itself instead of a copy"
     )
     s.add_argument(
+        "--promote",
+        choices=["auto", "manual"],
+        default="auto",
+        help=(
+            "auto: a candidate patch is merged into the next version once it passes the "
+            "checks (default); manual: write the patch and stop, merging nothing"
+        ),
+    )
+    s.add_argument(
         "--on-fabrication",
         choices=["warn", "retry", "fail"],
         default="retry",
@@ -346,7 +356,8 @@ def main(argv=None) -> int:
     except KeyboardInterrupt:
         _log("interrupted")
         return 130
-    except (BuildError, PackageError, FabricationError, FileNotFoundError,
+    except (BuildError, PackageError, FabricationError, PromotionRefused,
+            FileNotFoundError,
             TruncatedError, RefusalError, ValueError) as exc:
         _log(f"\n{type(exc).__name__}: {exc}")
         return 1

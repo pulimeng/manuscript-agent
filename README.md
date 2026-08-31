@@ -300,6 +300,77 @@ Almost everything you'll want to change is prompt text or config, in two places:
   is told never to fabricate a result to satisfy a reviewer and to leave untouched sections
   byte-for-byte alone, the editor is told to name which reviewer is wrong.
 
+## Versions, patches and promotion
+
+The loop never edits the manuscript under review. Each round works on a sealed version, and a
+revision is a proposal until it earns its way in.
+
+```
+v1 (frozen, hashed, compiled)
+ ├── reviewers comment on v1's PDF — they cannot edit anything
+ ├── editor adjudicates
+ ├── author proposes round-1/revision.patch against v1
+ ├── candidate tree assembled and compiled in round-1/candidate/
+ ├── checks: build, page limit, citations, references, figures, stale wording, fabrication
+ └── passes ──► promoted to v2 (frozen, hashed, compiled)   MERGE_STATUS: MERGED
+     fails   ──► run stops, patch kept                      MERGE_STATUS: UNMERGED
+```
+
+**Versions are immutable.** `runs/<run>/versions/v1/`, `v2/` … are complete, compilable
+packages, each with the PDF built from exactly those sources and a SHA-256 over both. The
+version stamp — `v2 | source sha256:… | pdf sha256:… | 9 pages` — goes into every review
+prompt, so a review can always be traced to the bytes it was made against.
+
+**Reviewers comment, they never edit.** Their only output is structured critique. Every point
+must carry the version id it refers to and the page it appears on; points naming a different
+version are collected in `misanchored.md` and the editor is told to treat them as unverified
+rather than binding the authors to them.
+
+**Revisions are patches.** The author's output is assembled in a candidate tree and diffed
+against the version — `revision.patch` is a plain `git apply`-compatible file you can read,
+apply by hand, or discard. The manuscript itself is only written when a candidate is promoted.
+
+**Promotion is gated** by mechanical checks, run on the candidate before anything merges:
+
+| check | blocks promotion when |
+| --- | --- |
+| build | the candidate does not compile |
+| pages | over the venue's page limit (warns when exactly at it) |
+| citations | a `\cite` key does not resolve |
+| references | a `\ref` is undefined |
+| figures | the text points at a file the package does not contain |
+| stale wording | `TODO`, `TBD`, `FIXME`, `XXX`, `placeholder` survive into the submission |
+| fabrication | numbers, citations or figures with no antecedent in the reviewed version |
+
+A hardcoded cross-reference (`Section 4` rather than `\ref`) is a warning, not a block —
+it is what goes stale when sections move. The author gets one repair pass; if the candidate
+still fails, it is not promoted and the run ends with the patch on disk and unmerged.
+`--promote manual` writes the patch and merges nothing, for when you want to read every
+change yourself.
+
+**The outcome is a patch against your project.** `final.patch` is the whole run as one diff
+from v1 to the last version, and `MERGE_STATUS` records the decision, both hashes, whether
+it applies cleanly to the directory you started from, and the command to apply it:
+
+```
+MERGED
+decision: major_revision
+base: v1 (source sha256:f45b439b4dc835e3)
+final: v3 (source sha256:2c81aa04e91be773)
+project: /Users/you/paper
+applies cleanly to the project: True
+apply with: git apply -p1 runs/paper-.../final.patch
+```
+
+**Reviewer access is not an author failing.** Reviewers see only the PDF, so they are given a
+manifest of what the submission actually ships — repository links, code and data files found
+in the package. Each point records `artifact_status`: `authors_did_not_provide` is a real gap,
+`provided_but_i_could_not_access` is the reviewer's own limit and the editor is instructed
+never to turn one into a critical issue. Those points are listed in `artifact-access.md`.
+
+Everything above stays readable: versions are real packages, patches are standard unified
+diffs, and every report is markdown or JSON.
+
 ## Guardrails
 
 The case the loop is built around is the reviewer asking for something the authors cannot
@@ -361,6 +432,7 @@ python tests/test_providers.py     # spec parsing, request shapes, panel routing
 python tests/test_guardrails.py    # impossible request -> declined -> editor rules
 python tests/test_fabrication.py   # invented result -> detect, repair, escalate, fail
 python tests/test_package.py       # package discovery, per-file write-back, PDF submission
+python tests/test_versioning.py    # freeze and hash, patch proposals, the promotion gate
 ```
 
 ## Licence

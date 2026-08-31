@@ -39,6 +39,25 @@ FIRST = """Review the manuscript below.
 
 Produce your review."""
 
+ANCHOR = """You are reviewing this exact version:
+
+  {stamp}
+
+Every point you raise must carry that version id verbatim in its `version` field, and the
+page of the attached PDF where the issue appears. A criticism the authors cannot locate is
+not actionable, and the editor will discard it.
+
+<available_artifacts>
+{artifacts}
+</available_artifacts>
+
+When a point concerns code, data or supplementary material, set `artifact_status` honestly.
+If the artifact is listed above, you simply cannot open it from a PDF — record that as
+'provided_but_i_could_not_access' and do not hold it against the authors or let it lower your
+soundness score. Reserve 'authors_did_not_provide' for material that is genuinely absent.
+
+"""
+
 FIRST_PDF = """The submitted manuscript is attached as a PDF — the compiled article exactly
 as the authors submitted it, with its figures, tables, captions and layout.
 
@@ -115,6 +134,8 @@ class ReviewerAgent:
         previous_review_md: str | None = None,
         response_letter: str | None = None,
         pdf: Attachment | None = None,
+        stamp: str = "",
+        artifacts: str = "",
     ) -> ScoredReview:
         """Read the submitted PDF when there is one; fall back to the sources otherwise."""
         resubmission = bool(previous_review_md and response_letter)
@@ -133,6 +154,8 @@ class ReviewerAgent:
             )
         else:
             prompt = FIRST.format(fmt=manuscript.fmt, text=manuscript.text)
+        if stamp:
+            prompt = ANCHOR.format(stamp=stamp, artifacts=artifacts or "none") + prompt
         extra = {"documents": [pdf]} if pdf else {}
         review = self.llm.parse(self._system(persona), prompt, Review, **extra)
         return ScoredReview(reviewer_id=persona.id, persona=persona.name, review=review)

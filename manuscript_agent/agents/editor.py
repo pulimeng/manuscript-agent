@@ -27,6 +27,15 @@ Rules of engagement:
   explicitly so the authors are not asked to fix a non-problem.
 - 'critical_issues' is a contract: it must be the complete set of things that, if fixed,
   would move this manuscript to acceptance. Keep it short and ordered by importance.
+- Mechanical checks (build, page limit, undefined citations and references, missing
+  figures, unresolved drafting markers) run automatically on every version. Their result is
+  given to you. Do not spend a critical issue on anything the checks already cover, and do
+  not accept a reviewer point that the checks contradict.
+- A reviewer point marked 'provided_but_i_could_not_access' is a limit of the reviewer's
+  access to a PDF, not a deficiency of the manuscript. Never turn one into a critical issue.
+  A point marked 'authors_did_not_provide' is a real gap and may be one.
+- Points listed as misanchored named a version other than the one under review. Treat them
+  as unverified and say so rather than binding the authors to them.
 - If an author response is included, read it before deciding. Where the authors state
   that a request cannot be met — an experiment they cannot run, data they do not hold —
   judge that claim on its merits. If you accept it, you have two honest options: drop the
@@ -85,6 +94,20 @@ The authors stated these requests cannot be met with the evidence available to t
 </declared_out_of_scope>
 """
 
+CHECKS = """
+<automated_checks>
+Run against the version under review:
+{report}
+</automated_checks>
+"""
+
+MISANCHORED = """
+<misanchored_points>
+These reviewer points cite a version other than the one under review:
+{items}
+</misanchored_points>
+"""
+
 INTEGRITY = """
 <integrity_report>
 An automated check flagged these values as introduced during the last revision with no
@@ -130,6 +153,8 @@ class EditorAgent:
         unaddressed: Optional[List[str]] = None,
         integrity: Optional[List[str]] = None,
         pdf: Optional[Attachment] = None,
+        checks: str = "",
+        misanchored: Optional[List[str]] = None,
     ) -> MetaReview:
         standards = self.topic.brief()
         system = SYSTEM.format(
@@ -148,6 +173,10 @@ class EditorAgent:
             response += UNADDRESSED.format(items=_bullets(unaddressed))
         if integrity:
             response += INTEGRITY.format(items=_bullets(integrity))
+        if checks:
+            response += CHECKS.format(report=checks)
+        if misanchored:
+            response += MISANCHORED.format(items=_bullets(misanchored))
         fields = dict(
             reviews=reviews_md(reviews),
             author_response=response,

@@ -67,6 +67,10 @@ class Manuscript:
         out.write_text(self.text)
         return out
 
+    def proposed_blocks(self, emitted: str) -> dict:
+        """A one-file manuscript emits the whole file, so the proposal is that one file."""
+        return {self.path.name: strip_fence(emitted)}
+
     def replace(self, new_text: str) -> str:
         """Swap in a new full text, returning a unified diff against the old one."""
         old = self.text

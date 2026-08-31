@@ -7,19 +7,20 @@ from manuscript_agent.manuscript import Manuscript
 from manuscript_agent.pipeline import SubmissionPipeline
 from manuscript_agent.schemas import (Review, ReviewPoint, MetaReview, RevisionPlan,
                                       RevisionItem)
+VID = {"v": "v1"}
 ROUND = {"n": 0}
 
 class StubLLM:
     def parse(self, system, prompt, schema, max_tokens=16000):
         assert any(t in prompt for t in ("<manuscript", "<revised_manuscript", "<reviews>"))
         if schema is Review:
-            return Review(summary="s", points=[ReviewPoint(label="W1", kind="weakness",
-                          section="§3", comment="c", severity="major")], soundness=3,
+            return Review(version_reviewed=VID["v"], summary="s", points=[ReviewPoint(label="W1", kind="weakness", version=VID["v"], page=1,
+                          artifact_status="not_applicable", section="§3", comment="c", severity="major")], soundness=3,
                           novelty=3, clarity=3, overall=5, confidence=4,
                           recommendation="major_revision")
         if schema is MetaReview:
             ROUND["n"] += 1
-            return MetaReview(summary="m", consensus_strengths=["a"],
+            return MetaReview(version_reviewed=VID["v"], summary="m", consensus_strengths=["a"],
                               critical_issues=["fix §3"], optional_issues=[],
                               decision="accept" if ROUND["n"] >= 2 else "major_revision",
                               rationale="r", guidance_to_authors=["g"])
@@ -28,8 +29,11 @@ class StubLLM:
                                 critical_issues=[1], section="§3", action="do x",
                                 stance="accept")], out_of_scope=[])
         raise AssertionError(schema)
-    def text(self, system, prompt, max_tokens=None):
-        return "```markdown\n# Title\n\nRevised body.\n```"
+    def text(self, system, prompt, max_tokens=None, documents=None):
+        if "<diff_of_changes>" in prompt:
+            return "letter"
+        return ("%%% FILE: paper.md %%%\n# Title\n\nRevised body.\n"
+                "%%% END FILE: paper.md %%%\n")
 
 tmp = Path(sys.argv[1] if len(sys.argv) > 1 else "/tmp") / "ma-test-loop"; shutil.rmtree(tmp, ignore_errors=True); tmp.mkdir(parents=True)
 src = tmp / "paper.md"; src.write_text("# Title\n\nOriginal body.\n")

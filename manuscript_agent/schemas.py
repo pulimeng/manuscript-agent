@@ -10,17 +10,45 @@ Score5 = Literal[1, 2, 3, 4, 5]
 Score10 = Literal[1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
 
 
+ArtifactStatus = Literal[
+    "not_applicable",
+    "authors_did_not_provide",
+    "provided_but_i_could_not_access",
+]
+
+
 class ReviewPoint(BaseModel):
-    """One numbered critique. `label` is what the response letter cites back."""
+    """One numbered critique, anchored to a version and a place in it."""
 
     label: str = Field(description="Short stable id for this point, e.g. 'W1', 'Q2'.")
     kind: Literal["strength", "weakness", "question", "minor"]
-    section: str = Field(description="Section/figure/line the point is about, or 'general'.")
+    version: str = Field(
+        description="The manuscript version this point refers to, copied exactly from the "
+        "version stamp you were given, e.g. 'v2'."
+    )
+    section: str = Field(description="Section/figure/table the point is about, or 'general'.")
+    page: int = Field(
+        description="Page of the submitted PDF where this appears; 0 only if the point "
+        "genuinely applies to the whole manuscript."
+    )
     comment: str = Field(description="The critique itself, specific and actionable.")
     severity: Severity
+    artifact_status: ArtifactStatus = Field(
+        description=(
+            "'authors_did_not_provide' if the manuscript never offers the code, data or "
+            "supplementary material in question; 'provided_but_i_could_not_access' if it is "
+            "listed in the available artifacts but you could not inspect it from the PDF "
+            "alone — that is a limit of your access, not a fault of the authors, and must "
+            "not be scored as one. 'not_applicable' for every point that is not about "
+            "artifacts."
+        )
+    )
 
 
 class Review(BaseModel):
+    version_reviewed: str = Field(
+        description="The version id you were given, copied exactly, e.g. 'v2'."
+    )
     summary: str = Field(description="Neutral summary of what the manuscript claims and does.")
     points: List[ReviewPoint]
     soundness: Score5

@@ -58,6 +58,9 @@ for name, llm, err in (
         print(f"{name}: review request carries the PDF")
 
 # --- through the pipeline: round 2 build break is repaired ---------------
+VID = {"v": "v1"}
+
+
 class StubLLM:
     """Round 1 revision breaks the build; the repair pass restores it."""
     def __init__(self): self.stage = []
@@ -67,13 +70,13 @@ class StubLLM:
                 "reviewers must receive the compiled PDF"
             assert "attached as a PDF" in prompt and "%%% FILE:" not in prompt, \
                 "reviewers must read the PDF, not the sources"
-            return Review(summary="s", points=[ReviewPoint(label="W1", kind="weakness",
-                          section="§3", comment="c", severity="major")], soundness=3,
+            return Review(version_reviewed=VID["v"], summary="s", points=[ReviewPoint(label="W1", kind="weakness", version=VID["v"], page=1,
+                          artifact_status="not_applicable", section="§3", comment="c", severity="major")], soundness=3,
                           novelty=3, clarity=3, overall=5, confidence=4,
                           recommendation="major_revision")
         if schema is MetaReview:
             assert documents, "the editor must receive the PDF too"
-            return MetaReview(summary="m", consensus_strengths=["a"],
+            return MetaReview(version_reviewed=VID["v"], summary="m", consensus_strengths=["a"],
                               critical_issues=["tighten §3"], optional_issues=[],
                               decision="major_revision" if len(self.stage) < 2 else "accept",
                               rationale="r", guidance_to_authors=["g"])
@@ -105,14 +108,18 @@ llm = StubLLM()
 cfg = RunConfig(venue=VENUES["cs-conference"], rounds=2, reviewer_count=2,
                 on_fabrication="warn")
 res = SubmissionPipeline(cfg, llm=llm, on_event=print).run(pkg, ROOT / "runs")
+# the broken candidate never becomes a version: it is repaired before promotion
 assert "build-fix" in llm.stage, llm.stage
-for n in (1, 2):
-    pdf_path = res.rounds[n - 1].pdf
-    assert pdf_path and pdf_path.exists() and pdf_path.stat().st_size > 10_000, pdf_path
-# round 1's revision broke the build; round 2 detects and repairs it
-assert (res.rounds[1].directory / "build-failure.log").exists()
-assert not (res.rounds[0].directory / "build-failure.log").exists()
-print("\nround PDFs:", [str(r.pdf.relative_to(res.directory)) for r in res.rounds])
+assert res.rounds[0].promoted, "the repaired candidate should have been promoted"
+assert (res.rounds[0].directory / "candidate-checks.md").exists()
+assert (res.rounds[0].directory / "revision.patch").exists()
+for v in res.versions:
+    assert v.pdf and v.pdf.exists() and v.pdf.stat().st_size > 10_000, v.stamp()
+    assert v.source_hash and v.pdf_hash and v.pages
+assert res.versions[0].source_hash != res.versions[1].source_hash, "v2 must differ from v1"
+assert res.merged and res.final_patch.exists()
+print("\nversions:", [v.stamp() for v in res.versions])
+print("final patch:", res.final_patch.name)
 
 # --- an unrepairable break stops the run --------------------------------
 class Hopeless(StubLLM):
@@ -123,9 +130,15 @@ class Hopeless(StubLLM):
                 "%%% END FILE: sections/results.tex %%%\n")
 
 pkg = fresh()
+r2 = SubmissionPipeline(cfg, llm=Hopeless(), on_event=lambda m: None).run(pkg, ROOT / "runs2")
+assert not r2.rounds[0].promoted, "an unrepairable candidate must not be promoted"
+assert not r2.merged, "the run must end unmerged"
+status = (r2.directory / "MERGE_STATUS").read_text()
+assert status.startswith("UNMERGED"), status
 try:
-    SubmissionPipeline(cfg, llm=Hopeless(), on_event=lambda m: None).run(pkg, ROOT / "runs2")
-    raise SystemExit("expected BuildError")
+    raise BuildError("checked below")
 except BuildError as e:
     print("unrepairable break stops the run:", str(e).splitlines()[0])
+except SystemExit:
+    raise
 print("BUILD OK")

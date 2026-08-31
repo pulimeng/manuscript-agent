@@ -35,6 +35,13 @@ GRAPHICSPATH = re.compile(r"\\graphicspath\s*\{(.+?)\}\s*(?:%|$)", re.MULTILINE)
 PATH_GROUP = re.compile(r"\{([^{}]*)\}")
 BIB_ENTRY = re.compile(r"@\w+\s*\{\s*([^,\s}]+)")
 CAPTION = re.compile(r"\\caption\s*\{")
+ARTIFACT_URL = re.compile(
+    r"https?://(?:www\.)?(?:github\.com|gitlab\.com|zenodo\.org|osf\.io|"
+    r"huggingface\.co|figshare\.com|dataverse\.[\w.]+|codeocean\.com)/[^\s}\\,)]+"
+)
+CODE_SUFFIXES = {".py", ".ipynb", ".R", ".r", ".sh", ".jl", ".m", ".cpp", ".java"}
+DATA_SUFFIXES = {".csv", ".tsv", ".json", ".jsonl", ".parquet", ".zip", ".tar", ".gz",
+                 ".npz", ".h5", ".xlsx"}
 DOCUMENTCLASS = re.compile(r"^\s*\\documentclass", re.MULTILINE)
 COMMENT = re.compile(r"(?<!\\)%.*$", re.MULTILINE)
 
@@ -144,6 +151,42 @@ class Package:
             keys.update(BIB_ENTRY.findall(bib.read_text(errors="replace")))
         return keys
 
+    def artifacts(self) -> List[str]:
+        """Code, data and repository links the manuscript actually ships or points to.
+
+        Reviewers see only the PDF, so without this they cannot tell 'the authors released
+        nothing' from 'I cannot open it from here'.
+        """
+        found: List[str] = []
+        for src in self.sources:
+            for url in ARTIFACT_URL.findall(src.read_text(errors="replace")):
+                entry = f"link: {url.rstrip('.')}"
+                if entry not in found:
+                    found.append(entry)
+        for path in sorted(self.root.rglob("*")):
+            if not path.is_file() or any(x.startswith(".") for x in path.parts):
+                continue
+            suffix = path.suffix.lower()
+            if suffix in CODE_SUFFIXES:
+                found.append(f"code in package: {self.rel(path)}")
+            elif suffix in DATA_SUFFIXES:
+                found.append(f"data in package: {self.rel(path)}")
+        return found
+
+    def artifact_manifest(self) -> str:
+        items = self.artifacts()
+        if not items:
+            return (
+                "No code, data or repository link is shipped with this submission or named "
+                "in its text. Absence here means the authors did not provide it."
+            )
+        return (
+            "The submission ships or names the following artifacts. You are reading the PDF "
+            "only, so you cannot open them from here — that is a limit of your access, not a "
+            "failure by the authors:\n"
+            + "\n".join(f"  - {i}" for i in items)
+        )
+
     def missing_assets(self) -> List[str]:
         """Figures and data files referenced by the text that do not exist on disk."""
         return [self.rel(a) for a in self.assets if not a.exists()]
@@ -190,6 +233,19 @@ class Package:
         return "\n".join(parts)
 
     # -- applying a revision ----------------------------------------------
+
+    def proposed_blocks(self, emitted: str) -> Dict[str, str]:
+        """Parse the author's output into {relative path: new body} without writing it."""
+        blocks: Dict[str, str] = {}
+        for m in FILE_BLOCK.finditer(strip_fence(emitted)):
+            blocks[m.group("path").strip()] = m.group("body").rstrip("\n") + "\n"
+        if not blocks:
+            raise PackageError(
+                "the author emitted no FILE blocks; there is nothing to propose"
+            )
+        for rel in blocks:
+            self._safe_path(rel)  # validate every path up front
+        return blocks
 
     def replace(self, emitted: str) -> str:
         """Write back each FILE block, all or nothing.
@@ -415,6 +471,42 @@ class PdfSubmission:
     def known_citations(self) -> Set[str]:
         return set()
 
+    def artifacts(self) -> List[str]:
+        """Code, data and repository links the manuscript actually ships or points to.
+
+        Reviewers see only the PDF, so without this they cannot tell 'the authors released
+        nothing' from 'I cannot open it from here'.
+        """
+        found: List[str] = []
+        for src in self.sources:
+            for url in ARTIFACT_URL.findall(src.read_text(errors="replace")):
+                entry = f"link: {url.rstrip('.')}"
+                if entry not in found:
+                    found.append(entry)
+        for path in sorted(self.root.rglob("*")):
+            if not path.is_file() or any(x.startswith(".") for x in path.parts):
+                continue
+            suffix = path.suffix.lower()
+            if suffix in CODE_SUFFIXES:
+                found.append(f"code in package: {self.rel(path)}")
+            elif suffix in DATA_SUFFIXES:
+                found.append(f"data in package: {self.rel(path)}")
+        return found
+
+    def artifact_manifest(self) -> str:
+        items = self.artifacts()
+        if not items:
+            return (
+                "No code, data or repository link is shipped with this submission or named "
+                "in its text. Absence here means the authors did not provide it."
+            )
+        return (
+            "The submission ships or names the following artifacts. You are reading the PDF "
+            "only, so you cannot open them from here — that is a limit of your access, not a "
+            "failure by the authors:\n"
+            + "\n".join(f"  - {i}" for i in items)
+        )
+
     def missing_assets(self) -> List[str]:
         return []
 
@@ -423,6 +515,22 @@ class PdfSubmission:
 
     @property
     def emit_instructions(self) -> str:
+        raise PackageError(self._no_sources())
+
+    def proposed_blocks(self, emitted: str) -> Dict[str, str]:
+        """Parse the author's output into {relative path: new body} without writing it."""
+        blocks: Dict[str, str] = {}
+        for m in FILE_BLOCK.finditer(strip_fence(emitted)):
+            blocks[m.group("path").strip()] = m.group("body").rstrip("\n") + "\n"
+        if not blocks:
+            raise PackageError(
+                "the author emitted no FILE blocks; there is nothing to propose"
+            )
+        for rel in blocks:
+            self._safe_path(rel)  # validate every path up front
+        return blocks
+
+    def proposed_blocks(self, emitted: str) -> dict:
         raise PackageError(self._no_sources())
 
     def replace(self, emitted: str) -> str:
