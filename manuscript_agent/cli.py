@@ -7,6 +7,7 @@ import json
 import os
 import shutil
 import sys
+from datetime import datetime
 from pathlib import Path
 
 from .agents import AuthorAgent, EditorAgent, ReviewerAgent
@@ -188,11 +189,14 @@ def cmd_review(args) -> int:
     if isinstance(ms, PdfSubmission):
         return _review_pdf(cfg, ms, args)
 
-    history = SubmissionHistory.load(
-        args.history or Path(ms.root) / ".manuscript-agent"
-    )
-    if args.fresh:
-        history.rounds = []
+    history_dir = Path(args.history or Path(ms.root) / ".manuscript-agent")
+    if args.fresh and (history_dir / "state.json").exists():
+        stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+        archived = history_dir.with_name(f"{history_dir.name}.archived-{stamp}")
+        history_dir.rename(archived)
+        _log(f"Archived the previous history to {archived}")
+        _log("  starting again at v1; the old rounds stay readable but are not carried over")
+    history = SubmissionHistory.load(history_dir)
     store = VersionStore(history.directory / "versions", cfg.compile_pdf, cfg.engine)
     store.versions = []
     version = store.freeze(ms.root, Path(ms.main), history.next_vid())
@@ -434,7 +438,9 @@ def build_parser() -> argparse.ArgumentParser:
         help="where rounds are kept (default: <package>/.manuscript-agent)",
     )
     r.add_argument(
-        "--fresh", action="store_true", help="ignore previous rounds and start over at v1"
+        "--fresh",
+        action="store_true",
+        help="start over at v1; the existing history is archived alongside, not deleted",
     )
     r.add_argument("-o", "--out", help="write the report here instead of stdout")
     common(r)

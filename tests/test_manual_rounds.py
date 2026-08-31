@@ -111,4 +111,23 @@ try:
 except HistoryError as e:
     assert "--fresh" in str(e)
 print("corrupt history reports how to recover")
+
+# --- --fresh archives rather than destroys -------------------------------
+shutil.rmtree(ROOT / "fresh", ignore_errors=True)
+FR = ROOT / "fresh"; FR.mkdir(parents=True)
+(FR / "main.md").write_text("# Paper\n\nFirst version.\n")
+fresh_args = ["review", str(FR), "--no-compile", "--reviewers", "2"]
+assert cli.main(fresh_args) == 0
+before = (FR / ".manuscript-agent/round-1/reviews.md").read_text()
+
+assert cli.main(fresh_args + ["--fresh"]) == 0
+archives = sorted(FR.glob(".manuscript-agent.archived-*"))
+assert len(archives) == 1, archives
+assert (archives[0] / "round-1/reviews.md").read_text() == before, "old reviews must survive"
+
+restarted = SubmissionHistory.load(FR / ".manuscript-agent")
+assert len(restarted.rounds) == 1 and restarted.rounds[0].vid == "v1", restarted.rounds
+assert not restarted.rounds[0].reviews[0].review.prior_points, \
+    "a fresh start must not carry prior points"
+print("--fresh archived the old history and restarted at v1")
 print("MANUAL ROUNDS OK")
