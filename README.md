@@ -1,20 +1,24 @@
 # ManuscriptAgent
 
-An agentic write → submit → review → revise → resubmit loop for a real manuscript file.
+Peer review for a manuscript you are still writing. Four reviewers and an editor read the
+compiled PDF, argue about it, and hand you a decision — then you revise, and they pick up
+where they left off.
 
-Three agents, one file:
+```bash
+manuscript-agent review ./paper --adversarial                        # round 1
+#   ... you revise the sources yourself ...
+manuscript-agent review ./paper --adversarial --letter response.md   # round 2
+```
 
-- **Author** — drafts the manuscript, plans each revision, rewrites the file in place, and
-  writes the response letter.
-- **Reviewers** — N independent personas (methodologist, domain expert, generalist, optional
-  skeptic) producing structured reviews with per-point severities and scores. On round 2+
-  each reviewer sees its own previous review and the response letter, and checks whether the
-  claimed edits actually landed in the text.
-- **Editor** — adjudicates the reviews rather than averaging them, discards points that are
-  wrong about the manuscript, and issues `accept` / `minor_revision` / `major_revision` /
-  `reject`.
+Nothing writes to your manuscript. The agents produce critique; the writing stays yours.
 
-The loop runs until the editor accepts, rejects, or the round budget runs out.
+- **Reviewers** — independent personas (methodologist, domain expert, careful generalist,
+  and an adversarial skeptic under `--adversarial`), each producing a structured review with
+  per-point severities, scores, and the version and page every point refers to.
+- **Editor** — adjudicates rather than averages, discards reviewer points that are wrong
+  about the manuscript, and issues `accept` / `minor_revision` / `major_revision` / `reject`.
+- **Author** *(optional)* — only in `submit`, the fully automatic loop, where it proposes
+  revisions as patches behind a promotion gate. The manual loop never calls it.
 
 ## Requirements
 
@@ -23,30 +27,30 @@ The loop runs until the editor accepts, rejects, or the round budget runs out.
 | Python | 3.9 or newer |
 | Packages | `anthropic>=0.125`, `openai>=2.0`, `pydantic>=2.0` — declared in `pyproject.toml`, pinned to tested versions in `requirements.txt` |
 | LaTeX | `latexmk` + `pdflatex` (TeX Live / MacTeX) — needed to compile the PDF that gets submitted. Without it the reviewers read the sources instead; `--no-compile` forces that path. |
-| Keys | `ANTHROPIC_API_KEY` and `OPENAI_API_KEY` |
+| Keys | `ANTHROPIC_API_KEY`. `OPENAI_API_KEY` too if you use `submit` or `write`, whose author role is an OpenAI model by default |
 
 Both provider SDKs are required rather than optional, because the default casting puts the
-author on OpenAI and the reviewers and editor on Claude. Cast every role on one provider with
-`--model` and you only need that provider's key — the preflight checks the roles a command
-actually uses.
+author on OpenAI and the reviewers and editor on Claude. `review` never casts an author, so it
+needs only the Anthropic key; the preflight checks the roles a command actually uses and tells
+you which is missing. Cast every role on one provider with `--model` if you prefer.
 
 ## Accepted formats
 
 | given | treated as |
 | --- | --- |
-| `.pdf` | a finished submission — reviewable, not revisable (there are no sources to edit) |
-| `.tex` | LaTeX sources; compiled to the PDF that gets submitted |
+| a directory | the manuscript inside it: the `.tex` declaring `\documentclass` (preferring `main`/`paper`/`manuscript` if several do), else `main.md` / `paper.md` / a lone `.md` |
+| `.tex` | LaTeX sources; compiled to the PDF the reviewers read |
 | `.md` | Markdown sources; reviewed as text, since there is nothing to compile |
-| a directory | resolved in that order: `.pdf`, then `.tex`, then `.md` |
+| `.pdf` | a finished submission — reviewable, not revisable, and no history is kept (there are no sources to version) |
 | `.docx`, `.doc`, `.odt`, `.rtf`, `.pages` | **not supported** — convert with pandoc, or export a PDF to review it as submitted |
 
 `.txt` and `.rst` also load, as plain text.
 
-One deliberate exception to the order: when a directory holds **both** a PDF and sources,
-`review` takes the PDF (it is the submission, and reviewing it costs nothing to build) while
-`submit` takes the sources and compiles a fresh PDF — submitting a stale export after a
-revision would show reviewers the wrong paper. Naming a file directly, or passing `--main`,
-overrides the search either way.
+**Sources win over a PDF sitting beside them.** A package holding both `main.tex` and
+`main.pdf` is resolved to the sources: the PDF is rebuilt from them each round, so reviewers
+never read a stale export, and there is a version to hash and diff against next time. Point
+the command at the `.pdf` explicitly if you want the one-shot path. `--main` overrides the
+search either way.
 
 ## Install
 
@@ -70,40 +74,31 @@ each command.
 ## Use
 
 ```bash
-# draft from a brief
+# review a round — this is the main workflow
+manuscript-agent review ./paper --adversarial
+manuscript-agent review ./paper --adversarial --letter response.md   # after you revise
+
+# review a PDF you already have, with no sources behind it
+manuscript-agent review ./paper/main.pdf
+
+# draft a first version from a brief
 manuscript-agent write examples/brief.md -o paper.md --venue biomed-journal
 
-# review a round; you revise by hand; review again — the reviewers remember
-manuscript-agent review ./paper --adversarial
-#   ... you edit the sources yourself ...
-manuscript-agent review ./paper --adversarial --letter response.md
-
-# the full loop
-manuscript-agent submit paper.md --rounds 3 --venue cs-conference
-manuscript-agent submit paper.tex --rounds 4 --reviewers 4 --adversarial --in-place
+# the fully automatic loop, if you want it (see "Automatic revision" below)
+manuscript-agent submit ./paper --rounds 3 --adversarial
 ```
 
-`--adversarial` *adds* the skeptic to the panel rather than replacing a reviewer, so
-`--reviewers 3 --adversarial` seats four: the methodologist, the domain expert, the careful
-generalist, and the skeptic.
+## How a round works
 
-```bash
-manuscript-agent submit paper.md --venue-file examples/venue-custom.json
+One round is: freeze the sources as a version, compile it, four reviewers read the PDF, the
+editor adjudicates. Then you revise and run it again.
+
 ```
-
-Without `--in-place`, `submit` works on a copy — `paper.revised.md`, or `mypaper.revised/`
-for a package — and leaves your original alone.
-
-## The manual loop (recommended)
-
-`review` is one round: freeze the sources, compile, four reviewers read the PDF, the editor
-adjudicates. Then **you** revise. Run it again and the same reviewers pick up where they left
-off.
-
-```bash
-manuscript-agent review ./paper --adversarial          # round 1
-#   ... you revise the sources ...
-manuscript-agent review ./paper --adversarial --letter response.md   # round 2
+your sources ──freeze──► v2 (hashed, compiled)
+                          ├── checks: build, citations, refs, figures, math, stale wording
+                          ├── R1..R4 read v2.pdf — with their own v1 reviews,
+                          │   your diff, and your response letter
+                          └── editor adjudicates ──► decision + critical issues
 ```
 
 Rounds are kept in `<package>/.manuscript-agent/` — versions, reviews, decisions and a running
@@ -126,10 +121,6 @@ carries:
 The mechanical checks run on every round, so if your revision broke a citation, left a `TODO`,
 unbalanced a `$` or referenced a missing figure, you hear about it before the reviewers do.
 `--fresh` starts over at v1; `--history DIR` puts the record somewhere else.
-
-`submit` still runs the fully automatic loop — the author agent proposes patches and a
-promotion gate merges them — if you ever want it. The manual loop is the better default:
-you keep the writing, and the agent does the part it is actually good at.
 
 ## Submission packages
 
@@ -192,31 +183,36 @@ that answers "we need an ROC curve" by writing `\includegraphics{figures/roc.pdf
 that does not exist is reported exactly like an invented number — and, under the default
 `retry`, sent back to be removed or admitted as a gap.
 
-Round snapshots copy the whole tree, so `round-1/submitted/` and `round-1/revised/` are
-complete, compilable packages rather than single files.
+Each round seals a complete, compilable copy of the package under `versions/`, not just the
+changed files.
 
 ## What you get
 
-Each run writes to `runs/<paper>-<timestamp>/` (`--outdir` moves that elsewhere):
+`review` writes into `<package>/.manuscript-agent/` (move it with `--history`):
 
 ```
+versions/v1/           the sealed sources, plus v1.pdf built from exactly them
+versions/v2/           ... one per round
 round-1/
-  submitted.pdf        the compiled article the reviewers actually read
-  submitted/           snapshot of the whole source package as submitted
-  build-failure.log    compiler output, when a revision broke the build
+  version.txt          the stamp the reviewers were given
+  submitted.pdf        the compiled article they read
   reviews.md           the reviews, human-readable
   reviews.json         the same, structured
   meta-review.md       the editor's adjudication and decision
-  revision-plan.md     what the author decided to change, and what to rebut
-  revised/             source snapshot after revision
-  changes.diff         unified diff of the round
-  response-letter.md   point-by-point reply to the reviewers
-  out-of-scope.md      requests the author declined, with reasons (if any)
-  unaddressed.md       critical issues neither planned nor declined (if any)
-  integrity.md         values introduced with no antecedent in the reviewed version
-round-2/ ...
-summary.md             score table across rounds + final decision
+  checks.md            what the mechanical checks found
+round-2/
+  ... the same, plus:
+  changes-since-last-round.diff   your manual edits, as the reviewers saw them
+  response-letter.md              your letter, if you passed --letter
+  dropped-points.md               prior points a reviewer did not revisit
+state.json             the machine-readable history
+summary.md             the running score table
 ```
+
+`submit` instead writes a timestamped `runs/<paper>-<timestamp>/` containing the same
+per-round material plus the author's `revision-plan.md`, `revision.patch`, `candidate/`,
+`candidate-checks.md`, `integrity.md`, `out-of-scope.md`, `unaddressed.md`, `MERGE_STATUS`
+and a `final.patch` for the whole run.
 
 ## Casting models in roles
 
@@ -276,16 +272,30 @@ Anthropic effort levels map onto OpenAI reasoning effort, with `xhigh`/`max` cla
 
 ## Library use
 
+Reading a submission's history:
+
+```python
+from manuscript_agent.history import SubmissionHistory
+
+hist = SubmissionHistory.load("paper/.manuscript-agent")
+for rnd in hist.rounds:
+    scores = [r.review.overall for r in rnd.reviews]
+    print(rnd.number, rnd.vid, rnd.decision, scores)
+
+last = hist.last
+for sr in last.reviews:                       # what each reviewer still holds against you
+    for point in sr.review.points:
+        if point.severity == "blocking":
+            print(f"{sr.reviewer_id}-{point.label} p.{point.page}: {point.comment}")
+```
+
+Driving the automatic loop:
+
 ```python
 from pathlib import Path
 from manuscript_agent import VENUES, Manuscript, RunConfig, SubmissionPipeline
 
-cfg = RunConfig(
-    venue=VENUES["cs-conference"],
-    rounds=3,
-    reviewer_count=4,
-    adversarial=True,
-)
+cfg = RunConfig(venue=VENUES["cs-conference"], rounds=3, reviewer_count=4, adversarial=True)
 result = SubmissionPipeline(cfg, on_event=print).run(
     Manuscript.load("paper.tex"), Path("runs")
 )
@@ -304,10 +314,14 @@ Almost everything you'll want to change is prompt text or config, in two places:
   is told never to fabricate a result to satisfy a reviewer and to leave untouched sections
   byte-for-byte alone, the editor is told to name which reviewer is wrong.
 
-## Versions, patches and promotion
+## Automatic revision (`submit`)
 
-The loop never edits the manuscript under review. Each round works on a sealed version, and a
-revision is a proposal until it earns its way in.
+`submit` runs the loop without you: the author agent proposes each revision and a promotion
+gate decides whether it is merged. The manual loop is the better default — you keep the
+writing — but everything below is available if you want the machine to try.
+
+It never edits the manuscript under review either. Each round works on a sealed version, and
+a revision is a proposal until it earns its way in.
 
 ```
 v1 (frozen, hashed, compiled)
@@ -391,10 +405,11 @@ never to turn one into a critical issue. Those points are listed in `artifact-ac
 Everything above stays readable: versions are real packages, patches are standard unified
 diffs, and every report is markdown or JSON.
 
-## Guardrails
+## Guardrails in the automatic loop
 
-The case the loop is built around is the reviewer asking for something the authors cannot
-produce — a new experiment, data they do not hold, a study they have not run.
+These govern `submit`, where an agent does the revising. The case they are built around is the
+reviewer asking for something the authors cannot produce — a new experiment, data they do not
+hold, a study they have not run.
 
 1. **The author can refuse.** `RevisionItem.stance` includes `rebut`, and `RevisionPlan`
    has an `out_of_scope` list. The revise prompt forbids the alternative outright: never add
@@ -443,18 +458,21 @@ produce — a new experiment, data they do not hold, a study they have not run.
 
 ## Tests
 
-Three offline suites, no API key needed — they stub the model and exercise the control flow:
+Nine offline suites, no API key needed — they stub the model and exercise the control flow:
 
 ```bash
-python tests/test_loop.py          # full loop, revision applied, artifacts written
+python tests/test_manual_rounds.py # review, revise by hand, review again — with continuity
+python tests/test_continuity.py    # a resubmission is judged by the same reviewer
+python tests/test_loop.py          # the automatic loop end to end
 python tests/test_build.py         # compile, attach the PDF, repair a broken build
 python tests/test_providers.py     # spec parsing, request shapes, panel routing
 python tests/test_guardrails.py    # impossible request -> declined -> editor rules
 python tests/test_fabrication.py   # invented result -> detect, repair, escalate, fail
 python tests/test_package.py       # package discovery, per-file write-back, PDF submission
 python tests/test_versioning.py    # freeze and hash, patch proposals, the promotion gate
-python tests/test_continuity.py    # a resubmission is judged by the same reviewer
 ```
+
+`for t in tests/test_*.py; do python "$t" || echo "FAILED $t"; done` runs the lot.
 
 ## Licence
 
@@ -462,22 +480,25 @@ MIT — see [LICENSE](LICENSE).
 
 ## Design notes and limits
 
-- **Revision is a whole-file rewrite.** The author agent receives the full manuscript and
-  emits the full revised manuscript, with an instruction to leave unplanned regions
-  unchanged. This is reliable for papers up to roughly novella length and makes
-  `changes.diff` meaningful, but it costs output tokens proportional to the paper on every
-  round. For book-length input, split into per-section files and loop over them.
-- **Nothing compiles or runs your LaTeX.** Add a `latexmk` call after `manuscript.save()` in
-  `pipeline.py` if you want a hard check that the revision still builds.
-- **Reviewers see only the manuscript.** They have no literature access, so novelty and
-  prior-art judgments are the weakest part of the output; the prompt instructs them to phrase
-  suspected prior work as a question rather than a claim. Wire in the `web_search` server
-  tool in `llm.py` if you want real citation checking.
-- **Reviews are structured outputs** (`messages.parse` with Pydantic schemas), so scores and
-  recommendations are enumerated and machine-usable rather than parsed out of prose.
-- **Reviewers run concurrently** in a thread pool; the model client is shared.
-- Refusals surface as `manuscript_agent.llm.RefusalError`. If you want automatic server-side
-  fallback instead, switch `llm.py` to `client.beta.messages.*` with the
-  `server-side-fallback-2026-07-01` beta and `fallbacks="default"`.
-- Model defaults to `claude-opus-5` at `effort=high`. Drop to `--effort medium` to cut cost;
-  reviews get noticeably shallower below that.
+- **Reviewers have no literature access.** They see the manuscript and nothing else, so
+  novelty and prior-art judgments are the weakest part of the output; the prompt tells them to
+  phrase suspected prior work as a question rather than a claim. Wire the `web_search` server
+  tool into `llm.py` if you want real citation checking.
+- **Reviews are structured outputs**, so scores, recommendations and per-point verdicts are
+  enumerated and machine-usable rather than parsed out of prose. `state.json` is the whole
+  history in that form.
+- **Reviewers run concurrently** in `submit`; `review` runs them in sequence so the log stays
+  readable.
+- **A page count is total pages**, references and appendices included, which is not how venues
+  count main text. No limit is set by default — pass `--page-limit` deliberately.
+- **No cost accounting.** Nothing reads `usage`; spend shows up only on the provider
+  dashboards.
+- **No `.docx`.** Sources must be LaTeX or Markdown.
+- Refusals surface as `manuscript_agent.llm.RefusalError`, truncated output as
+  `TruncatedError`. If you want automatic server-side fallback, switch `llm.py` to
+  `client.beta.messages.*` with the `server-side-fallback-2026-07-01` beta and
+  `fallbacks="default"`.
+- Reviewers and editor default to `claude-opus-5` at `effort=high`. `--effort medium` cuts
+  cost; reviews get noticeably shallower below that.
+- In `submit` only: revision is a whole-file rewrite per changed file, so output tokens scale
+  with the sections touched, and there is no convergence detection — it runs its round budget.
