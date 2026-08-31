@@ -7,6 +7,10 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
+class BinaryManuscriptError(ValueError):
+    """The file is not text, so it cannot be loaded as a manuscript."""
+
+
 FENCE = re.compile(r"^\s*```[a-zA-Z]*\s*\n(.*)\n```\s*$", re.DOTALL)
 
 FORMATS = {
@@ -29,7 +33,7 @@ class Manuscript:
         try:
             return Manuscript(path=p, text=p.read_text())
         except UnicodeDecodeError as exc:
-            raise ValueError(
+            raise BinaryManuscriptError(
                 f"{p} is not a text manuscript (it does not decode as UTF-8). "
                 "A PDF can be reviewed with `manuscript-agent review`; to revise it, point "
                 "the command at its sources."

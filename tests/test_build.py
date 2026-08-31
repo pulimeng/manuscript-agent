@@ -141,4 +141,20 @@ except BuildError as e:
     print("unrepairable break stops the run:", str(e).splitlines()[0])
 except SystemExit:
     raise
+
+# --- TeX echoes raw source bytes; its output is not necessarily UTF-8 ----
+pkg = fresh()
+latin1 = (ROOT / "sections/latin1.tex")
+latin1.write_bytes("\\section{Notes}\nSee \xa7 4 for the protocol.\n".encode("latin-1"))
+main = ROOT / "main.tex"
+main.write_text(main.read_text().replace("\\input{sections/results}",
+                                         "\\input{sections/results}\n\\input{sections/latin1}"))
+result = compile_pdf(ROOT, ROOT / "main.tex")
+assert isinstance(result.log, str), "the log must decode without raising"
+print("non-UTF-8 compiler output survived:", "ok" if result.log else "empty log")
+
+from manuscript_agent.patches import tree_patch
+p = tree_patch(ROOT, ROOT, "v1", "hash")
+assert p.applies_to(ROOT), "git apply --check must tolerate non-UTF-8 trees"
+print("git apply --check tolerates it too")
 print("BUILD OK")

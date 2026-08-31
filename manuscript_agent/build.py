@@ -87,8 +87,10 @@ def compile_pdf(root: Path, main: Path, engine: str = "pdflatex",
         env[var] = f"{root}:{env.get(var, '')}"
 
     try:
-        proc = subprocess.run(cmd, cwd=root, capture_output=True, text=True, timeout=timeout,
-                              env=env)
+        proc = subprocess.run(
+            cmd, cwd=root, capture_output=True, text=True, errors="replace",
+            timeout=timeout, env=env,
+        )
         output = proc.stdout + proc.stderr
         returncode = proc.returncode
     except subprocess.TimeoutExpired:

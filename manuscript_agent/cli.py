@@ -11,7 +11,7 @@ from pathlib import Path
 from .agents import AuthorAgent, EditorAgent, ReviewerAgent
 from .config import VENUES, RunConfig, Venue, personas
 from .llm import LLM
-from .manuscript import Manuscript, strip_fence
+from .manuscript import BinaryManuscriptError, Manuscript, strip_fence
 from .build import BuildError, available as tex_available, compile_pdf
 from .llm import Attachment, RefusalError, TruncatedError
 from .package import Package, PackageError, PdfSubmission
@@ -358,7 +358,7 @@ def main(argv=None) -> int:
         return 130
     except (BuildError, PackageError, FabricationError, PromotionRefused,
             FileNotFoundError,
-            TruncatedError, RefusalError, ValueError) as exc:
+            TruncatedError, RefusalError, BinaryManuscriptError) as exc:
         _log(f"\n{type(exc).__name__}: {exc}")
         return 1
     except Exception as exc:  # credentials, rate limits, transport

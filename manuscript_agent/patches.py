@@ -48,14 +48,14 @@ class Patch:
             return True
         proc = subprocess.run(
             ["git", "apply", "--check", "-p1", "-"],
-            input=self.text, text=True, cwd=root, capture_output=True,
+            input=self.text, text=True, errors="replace", cwd=root, capture_output=True,
         )
         return proc.returncode == 0
 
     def apply_to(self, root: Path) -> None:
         proc = subprocess.run(
             ["git", "apply", "-p1", "-"],
-            input=self.text, text=True, cwd=root, capture_output=True,
+            input=self.text, text=True, errors="replace", cwd=root, capture_output=True,
         )
         if proc.returncode != 0:
             raise RuntimeError(f"patch did not apply: {proc.stderr.strip()}")
