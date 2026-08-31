@@ -52,17 +52,25 @@ report = run_checks(trial, trial.package, page_limit=1)
 kinds = {f.check for f in report.blocking}
 assert not report.passed() and {"stale-wording", "citations"} <= kinds, report.render()
 assert any(f.check == "stale-wording" and f.severity == "warning" for f in report.findings)
-# a length breach warns by default: cutting pages is a rewrite, not a mechanical repair
 assert "pages" not in kinds, "the page limit must not block unless asked to"
-assert any(f.check == "pages" and f.severity == "warning" for f in report.findings)
-enforced = run_checks(trial, trial.package, page_limit=1, enforce_pages=True)
-assert "pages" in {f.check for f in enforced.blocking}, "--enforce-page-limit must block"
-print("checks ok:", report.summary(), "->", sorted(kinds), "| pages warns, enforces on demand")
+print("checks ok:", report.summary(), "->", sorted(kinds))
+
 
 good = materialise(v1.root, "main.tex", blocks, ROOT / "good")
 gt = store.evaluate(good, good / "main.tex", "v2-candidate")
 assert run_checks(gt, gt.package, page_limit=10).passed(), run_checks(gt, gt.package).render()
 print("a clean candidate passes")
+
+# a length breach warns by default: cutting pages is a rewrite, not a mechanical repair
+from dataclasses import replace as _replace
+over = _replace(gt, pages=19)
+warned = run_checks(over, over.package, page_limit=10)
+assert warned.passed(), "length alone must not block a candidate: " + warned.render()
+assert any(f.check == "pages" and f.severity == "warning" for f in warned.findings)
+enforced = run_checks(over, over.package, page_limit=10, enforce_pages=True)
+assert "pages" in {f.check for f in enforced.blocking}, "--enforce-page-limit must block"
+assert run_checks(over, over.package).passed(), "no limit set means no page check at all"
+print("pages: warns at 19>10, blocks only when enforced, silent when unset")
 
 # --- unbalanced math is caught before the compiler misreports it ---------
 from manuscript_agent.checks import CheckReport, _math_balance, error_context
