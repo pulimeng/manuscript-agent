@@ -5,9 +5,9 @@ compiled PDF, argue about it, and hand you a decision — then you revise, and t
 where they left off.
 
 ```bash
-manuscript-agent review ./paper --adversarial                        # round 1
+manuscript-agent review ./paper --venue iclr --adversarial            # round 1
 #   ... you revise the sources yourself ...
-manuscript-agent review ./paper --adversarial --letter response.md   # round 2
+manuscript-agent review ./paper --venue iclr --letter response.md     # round 2
 ```
 
 Nothing writes to your manuscript. The agents produce critique; the writing stays yours.
@@ -122,7 +122,15 @@ carries:
 
 The mechanical checks run on every round, so if your revision broke a citation, left a `TODO`,
 unbalanced a `$` or referenced a missing figure, you hear about it before the reviewers do.
-`--fresh` starts over at v1; `--history DIR` puts the record somewhere else.
+`--history DIR` puts the record somewhere else. `--fresh` starts over at v1 — it **archives**
+the existing history to `.manuscript-agent.archived-<timestamp>` beside it rather than
+overwriting the artifacts, which is what you want after changing the venue, the panel, or the
+reviewer instructions: rounds judged under different rules should not be carried forward as
+though they were comparable.
+
+History written by an earlier version is migrated when it is read, so upgrading needs no
+action. Fields that did not exist then are backfilled conservatively — a point recorded before
+`verification` existed is marked `inferred`, never `verified_in_manuscript`.
 
 ## Submission packages
 
@@ -304,13 +312,33 @@ result = SubmissionPipeline(cfg, on_event=print).run(
 print(result.decision, result.rounds[-1].meta.critical_issues)
 ```
 
+## Venues
+
+The venue profile is what the reviewers and editor calibrate against — the acceptance bar,
+the review form, and the length rule. Pick one with `--venue`:
+
+| `--venue` | for | length rule |
+| --- | --- | --- |
+| `iclr` | a top-tier ML conference; the acceptance bar says plainly that papers with real weaknesses are routinely accepted | 9 pages of main text, references and appendices excluded |
+| `cs-conference` | a generic selective CS conference (~20% acceptance) | 8 pages of main text plus unlimited appendix |
+| `biomed-journal` | clinical and translational work; statistics and reproducibility weighted heavily | ~4000 words, up to 6 display items |
+| `workshop` | early-stage and position work; a lenient bar | 4 pages |
+
+Nothing enforces these page rules mechanically — they are what the reviewers are told the
+venue expects. `--page-limit N` adds a real check against the compiled PDF's total page count
+(references and appendices included, so set it deliberately), and `--enforce-page-limit` makes
+a breach blocking rather than a warning.
+
+For anything else, write the four strings as JSON and pass `--venue-file`
+([example](examples/venue-custom.json)), or add a `Venue` to `VENUES` in `config.py`.
+
 ## Tuning it
 
 Almost everything you'll want to change is prompt text or config, in two places:
 
 - `manuscript_agent/config.py` — venue profiles (`VENUES`) and reviewer personas. A venue
-  profile is four strings: scope, acceptance bar, review form, length. Add your own, or pass
-  one as JSON with `--venue-file`.
+  profile is scope, acceptance bar, review form and length. Add your own, or pass one as
+  JSON with `--venue-file`.
 - `manuscript_agent/agents/*.py` — the system prompts and task prompts for each role. The
   guardrails that matter live here: reviewers are told not to invent prior work, the author
   is told never to fabricate a result to satisfy a reviewer and to leave untouched sections
