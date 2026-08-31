@@ -4,7 +4,6 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from manuscript_agent.config import RunConfig, VENUES
-from manuscript_agent.topics import TOPICS
 from manuscript_agent.manuscript import Manuscript
 from manuscript_agent.pipeline import SubmissionPipeline, unaddressed_issues
 from manuscript_agent.schemas import (Review, ReviewPoint, MetaReview, RevisionPlan,
@@ -50,7 +49,7 @@ tmp = Path(sys.argv[1] if len(sys.argv) > 1 else "/tmp") / "ma-test-guardrails"
 shutil.rmtree(tmp, ignore_errors=True); tmp.mkdir(parents=True)
 src = tmp / "paper.md"; src.write_text("# T\n\nbody\n")
 
-cfg = RunConfig(venue=VENUES["biomed-journal"], topic=TOPICS["ml"], rounds=2, reviewer_count=2)
+cfg = RunConfig(venue=VENUES["biomed-journal"], rounds=2, reviewer_count=2)
 res = SubmissionPipeline(cfg, llm=StubLLM(), on_event=print).run(Manuscript.load(src), tmp / "runs")
 
 r1 = res.rounds[0]

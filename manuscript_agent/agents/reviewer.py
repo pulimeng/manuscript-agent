@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from ..config import Persona, Venue
-from ..topics import TOPICS, Topic
 from ..llm import LLM
 from ..llm import Attachment
 from ..manuscript import Manuscript
@@ -16,7 +15,6 @@ SYSTEM = """You are {name}, serving as Reviewer {rid} for the following venue.
 Your review lens: {focus}
 Your disposition: {disposition}
 Your background: {expertise}
-{standards}
 
 Rules of engagement:
 - Read the whole manuscript before judging it. Quote or name the specific section, figure,
@@ -109,15 +107,12 @@ a low score."""
 
 
 class ReviewerAgent:
-    def __init__(self, llm: LLM, venue: Venue, topic: Topic | None = None) -> None:
+    def __init__(self, llm: LLM, venue: Venue) -> None:
         self.llm = llm
         self.venue = venue
-        self.topic = topic or TOPICS["general"]
 
     def _system(self, persona: Persona) -> str:
-        standards = self.topic.brief()
         return SYSTEM.format(
-            standards=f"\n{standards}\n" if standards else "",
             name=persona.name,
             rid=persona.id,
             venue=self.venue.brief(),

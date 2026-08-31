@@ -5,7 +5,6 @@ from __future__ import annotations
 from typing import List, Optional
 
 from ..config import Venue
-from ..topics import TOPICS, Topic
 from ..llm import LLM
 from ..llm import Attachment
 from ..manuscript import Manuscript
@@ -15,7 +14,7 @@ from ..schemas import MetaReview, ScoredReview
 SYSTEM = """You are the handling editor (area chair) for the following venue.
 
 {venue}
-{standards}
+
 You have read the manuscript yourself and you have the reviews in front of you. Your job is
 to adjudicate, not to average.
 
@@ -136,10 +135,9 @@ def _bullets(items: List[str]) -> str:
 
 
 class EditorAgent:
-    def __init__(self, llm: LLM, venue: Venue, topic: Topic | None = None) -> None:
+    def __init__(self, llm: LLM, venue: Venue) -> None:
         self.llm = llm
         self.venue = venue
-        self.topic = topic or TOPICS["general"]
 
     def decide(
         self,
@@ -156,10 +154,8 @@ class EditorAgent:
         checks: str = "",
         misanchored: Optional[List[str]] = None,
     ) -> MetaReview:
-        standards = self.topic.brief()
         system = SYSTEM.format(
             venue=self.venue.brief(),
-            standards=f"\n{standards}\n" if standards else "",
             round=round_no,
             max_rounds=max_rounds,
             round_note=FINAL_NOTE if round_no >= max_rounds else NORMAL_NOTE,

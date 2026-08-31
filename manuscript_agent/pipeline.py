@@ -128,11 +128,9 @@ class SubmissionPipeline:
     ) -> None:
         self.config = config
         self.author = AuthorAgent(llm or build(config.author_model), config.venue)
-        self.editor = EditorAgent(
-            llm or build(config.editor_model), config.venue, config.topic
-        )
+        self.editor = EditorAgent(llm or build(config.editor_model), config.venue)
         self.reviewers = [
-            ReviewerAgent(llm or build(spec), config.venue, config.topic)
+            ReviewerAgent(llm or build(spec), config.venue)
             for spec in config.reviewer_models
         ]
         self.on_event = on_event
@@ -467,7 +465,6 @@ def summarize(result: RunResult, config: RunConfig) -> str:
         f"# Submission run — {Path(result.manuscript.path).name}",
         "",
         f"Venue: {config.venue.name}",
-        f"Topic: {config.topic.name}",
         f"Author model: {config.author_model} (effort={config.effort})",
         f"Editor model: {config.editor_model}",
         "Reviewers: " + "; ".join(config.panel()),

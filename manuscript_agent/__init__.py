@@ -8,7 +8,6 @@ from .llm import LLM, Attachment
 from .manuscript import Manuscript
 from .pipeline import RunResult, SubmissionPipeline
 from .providers import ModelSpec, OpenAILLM
-from .topics import TOPICS, Topic
 
 __all__ = [
     "VENUES",
@@ -26,8 +25,6 @@ __all__ = [
     "RunConfig",
     "RunResult",
     "SubmissionPipeline",
-    "TOPICS",
-    "Topic",
     "Venue",
 ]
 __version__ = "0.1.0"

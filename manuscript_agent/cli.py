@@ -19,19 +19,12 @@ from .pipeline import FabricationError, PromotionRefused
 from .pipeline import SubmissionPipeline
 from .render import meta_md, reviews_md
 from .providers import ModelSpec, build
-from .topics import TOPICS, Topic
 
 
 def _venue(args) -> Venue:
     if args.venue_file:
         return Venue.load(args.venue_file)
     return VENUES[args.venue]
-
-
-def _topic(args) -> Topic:
-    if args.topic_file:
-        return Topic.load(args.topic_file)
-    return TOPICS[args.topic]
 
 
 def _spec(value, effort):
@@ -45,7 +38,6 @@ def _config(args) -> RunConfig:
         editor_model=_spec(args.editor_model, args.effort),
         reviewer_models=reviewer_models,
         venue=_venue(args),
-        topic=_topic(args),
         on_fabrication=getattr(args, "on_fabrication", "retry"),
         promote=getattr(args, "promote", "auto"),
         repair_attempts=getattr(args, "repair_attempts", 2),
@@ -164,7 +156,7 @@ def cmd_write(args) -> int:
     author = AuthorAgent(build(cfg.author_model), cfg.venue)
     fmt = Manuscript(path=out, text="").fmt
     _log(
-        f"Drafting {out} as {fmt} for: {cfg.venue.name} ({cfg.topic.name}) "
+        f"Drafting {out} as {fmt} for: {cfg.venue.name} "
         f"[{cfg.author_model}]"
     )
     out.parent.mkdir(parents=True, exist_ok=True)
@@ -182,10 +174,10 @@ def cmd_review(args) -> int:
     for persona, spec in zip(cfg.personas, cfg.reviewer_models):
         _log(f"{persona.id} ({persona.name}) reading... [{spec}]")
         reviews.append(
-            ReviewerAgent(build(spec), cfg.venue, cfg.topic).review(ms, persona, pdf=pdf)
+            ReviewerAgent(build(spec), cfg.venue).review(ms, persona, pdf=pdf)
         )
     _log(f"editor adjudicating... [{cfg.editor_model}]")
-    editor = EditorAgent(build(cfg.editor_model), cfg.venue, cfg.topic)
+    editor = EditorAgent(build(cfg.editor_model), cfg.venue)
     meta = editor.decide(ms, reviews, 1, 1, pdf=pdf)
     report = reviews_md(reviews) + "\n" + meta_md(meta)
     if args.out:
@@ -254,13 +246,6 @@ def build_parser() -> argparse.ArgumentParser:
     def common(sp):
         sp.add_argument("--venue", choices=sorted(VENUES), default="cs-conference")
         sp.add_argument("--venue-file", help="JSON file overriding the built-in venue profile")
-        sp.add_argument(
-            "--topic",
-            choices=sorted(TOPICS),
-            default="general",
-            help="CS subfield whose evidentiary standards the reviewers apply",
-        )
-        sp.add_argument("--topic-file", help="JSON file defining a custom topic profile")
         sp.add_argument(
             "--no-compile",
             action="store_true",

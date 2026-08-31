@@ -8,7 +8,6 @@ from pathlib import Path
 from typing import List, Optional
 
 from .providers import ModelSpec, cycle
-from .topics import TOPICS, Topic
 
 
 @dataclass
@@ -152,10 +151,8 @@ ADVERSARIAL_PERSONA = Persona(
 )
 
 
-def personas(
-    count: int, adversarial: bool = False, topic: Optional[Topic] = None
-) -> List[Persona]:
-    """Build the reviewer panel, specialising each reviewer's background to `topic`.
+def personas(count: int, adversarial: bool = False) -> List[Persona]:
+    """Build the reviewer panel.
 
     `adversarial` *adds* the skeptic to the panel rather than displacing a reviewer, so
     `--reviewers 3 --adversarial` seats four.
@@ -173,15 +170,12 @@ def personas(
     selected = pool[:count]
     if adversarial:
         selected.append(replace(ADVERSARIAL_PERSONA, id=f"R{count + 1}"))
-    if topic is not None:
-        selected = [replace(p, expertise=topic.expertise) for p in selected]
     return selected
 
 
 @dataclass
 class RunConfig:
     venue: Venue
-    topic: Topic = field(default_factory=lambda: TOPICS["general"])
     rounds: int = 3
     reviewer_count: int = 3
     adversarial: bool = False
@@ -201,7 +195,7 @@ class RunConfig:
 
     def __post_init__(self) -> None:
         if not self.personas:
-            self.personas = personas(self.reviewer_count, self.adversarial, self.topic)
+            self.personas = personas(self.reviewer_count, self.adversarial)
         override = ModelSpec.parse(self.model, self.effort) if self.model else None
         self.author_model = self.author_model or override or ModelSpec.parse(
             DEFAULT_AUTHOR_MODEL, self.effort

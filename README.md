@@ -7,8 +7,7 @@ Three agents, one file:
 - **Author** — drafts the manuscript, plans each revision, rewrites the file in place, and
   writes the response letter.
 - **Reviewers** — N independent personas (methodologist, domain expert, generalist, optional
-  skeptic), each specialised to a CS subfield via `--topic`, producing structured reviews with
-  per-point severities and scores. On round 2+
+  skeptic) producing structured reviews with per-point severities and scores. On round 2+
   each reviewer sees its own previous review and the response letter, and checks whether the
   claimed edits actually landed in the text.
 - **Editor** — adjudicates the reviews rather than averaging them, discards points that are
@@ -75,11 +74,11 @@ each command.
 manuscript-agent write examples/brief.md -o paper.md --venue biomed-journal
 
 # one review round, nothing rewritten
-manuscript-agent review paper.md --topic security --adversarial -o review-report.md
+manuscript-agent review paper.md --adversarial -o review-report.md
 
 # the full loop
-manuscript-agent submit paper.md --rounds 3 --venue cs-conference --topic ml
-manuscript-agent submit paper.tex --rounds 4 --reviewers 4 --adversarial --topic systems --in-place
+manuscript-agent submit paper.md --rounds 3 --venue cs-conference
+manuscript-agent submit paper.tex --rounds 4 --reviewers 4 --adversarial --in-place
 ```
 
 `--adversarial` *adds* the skeptic to the panel rather than replacing a reviewer, so
@@ -87,8 +86,7 @@ manuscript-agent submit paper.tex --rounds 4 --reviewers 4 --adversarial --topic
 generalist, and the skeptic.
 
 ```bash
-manuscript-agent submit paper.md --venue-file examples/venue-custom.json \
-                                 --topic-file examples/topic-custom.json
+manuscript-agent submit paper.md --venue-file examples/venue-custom.json
 ```
 
 Without `--in-place`, `submit` works on a copy — `paper.revised.md`, or `mypaper.revised/`
@@ -101,7 +99,7 @@ main file plus everything it pulls in. A single `.tex` that `\input`s other file
 to a package automatically.
 
 ```bash
-manuscript-agent submit examples/package --topic ml --rounds 3
+manuscript-agent submit examples/package --rounds 3
 manuscript-agent submit paper/ --main paper/manuscript.tex   # when several files declare \documentclass
 ```
 
@@ -237,45 +235,14 @@ played each role, and the run log tags every review with its provider.
 Anthropic effort levels map onto OpenAI reasoning effort, with `xhigh`/`max` clamped to
 `high`; non-reasoning OpenAI models omit the parameter entirely.
 
-## Reviewer specialisation by CS subfield
-
-`--topic` picks the evidentiary standard the reviewers hold the manuscript to. Each profile
-in [`manuscript_agent/topics.py`](manuscript_agent/topics.py) supplies the reviewer's
-background, what that community expects a paper to supply, and the failure modes it is
-practised at catching. Both the reviewers and the editor receive it.
-
-| topic | the paper is asked for | what gets caught |
-| --- | --- | --- |
-| `ml` | multiple seeds with dispersion, equal-budget tuned baselines, mechanism-isolating ablation | a gain inside seed variance; test-set model selection |
-| `nlp` | human eval with agreement, contamination check, verbatim prompts | LLM-as-judge with no human validation; prompts tuned on test |
-| `cv` | matched backbone/resolution/schedule, FLOPs and latency | a stronger backbone doing the work; undisclosed TTA |
-| `systems` | p95/p99 not means, full config, warm-up excluded, tuned real baseline | mean-only latency; default-config baselines; microbenchmark→end-to-end leaps |
-| `security` | threat model stated first, adaptive attacker, FP rate on benign data | a threat model that excludes the attacks the defense can't stop |
-| `pl` | proofs, scoped soundness claims, implementation matching the formalism | a sketch for the hard case; optimizations outside the proved model |
-| `theory` | complete proofs, bounds compared in the same model, hidden constants | an assumption doing the work; a regime nobody cares about |
-| `db` | standard workloads, index/buffer/isolation disclosure, concurrency, recovery | a comparison DBMS left at defaults; single-threaded numbers |
-| `hci` | design, N, recruitment, IRB, effect sizes, coding reliability | a sample too narrow for the claim; p-values with no effect size |
-| `se` | sampling rationale, threats-to-validity, replication package | tools evaluated on their authors' own projects |
-| `networks` | justified topology and traffic model, testbed evidence, fairness | deployment claims from simulation alone; no competing flows |
-| `general` | *(default — no subfield standards injected)* | |
-
-Add your own as JSON and pass `--topic-file` (see
-[`examples/topic-custom.json`](examples/topic-custom.json)), or add a `Topic` to `TOPICS`.
-The five fields are `id`, `name`, `expertise`, `standards`, `red_flags`. Reviewers are told
-that a missing item is a real weakness *only* against what the paper actually claims, so the
-checklist tightens the review without turning it into box-ticking.
-
 ## Library use
 
 ```python
 from pathlib import Path
 from manuscript_agent import VENUES, Manuscript, RunConfig, SubmissionPipeline
 
-from manuscript_agent import TOPICS
-
 cfg = RunConfig(
     venue=VENUES["cs-conference"],
-    topic=TOPICS["systems"],
     rounds=3,
     reviewer_count=4,
     adversarial=True,
@@ -293,8 +260,6 @@ Almost everything you'll want to change is prompt text or config, in two places:
 - `manuscript_agent/config.py` — venue profiles (`VENUES`) and reviewer personas. A venue
   profile is four strings: scope, acceptance bar, review form, length. Add your own, or pass
   one as JSON with `--venue-file`.
-- `manuscript_agent/topics.py` — subfield evidentiary standards (`TOPICS`), described above.
-  Venue answers *how selective*; topic answers *what counts as evidence here*.
 - `manuscript_agent/agents/*.py` — the system prompts and task prompts for each role. The
   guardrails that matter live here: reviewers are told not to invent prior work, the author
   is told never to fabricate a result to satisfy a reviewer and to leave untouched sections
