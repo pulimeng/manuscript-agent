@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import shutil
 import sys
@@ -13,9 +14,18 @@ from .config import VENUES, RunConfig, Venue, personas
 from .llm import LLM
 from .manuscript import BinaryManuscriptError, Manuscript, strip_fence
 from .build import BuildError, available as tex_available, compile_pdf
+from .checks import run_checks
+from .history import SubmissionHistory
+from .patches import tree_patch
+from .versions import VersionStore
 from .llm import Attachment, RefusalError, TruncatedError
 from .package import Package, PackageError, PdfSubmission
-from .pipeline import FabricationError, PromotionRefused
+from .pipeline import (
+    FabricationError,
+    PromotionRefused,
+    dropped_prior_points,
+    misanchored_points,
+)
 from .pipeline import SubmissionPipeline
 from .render import meta_md, reviews_md
 from .providers import ModelSpec, build
@@ -168,19 +178,125 @@ def cmd_write(args) -> int:
 
 
 def cmd_review(args) -> int:
+    """One round: freeze, compile, review, adjudicate. You revise; you run it again."""
     cfg = _config(args)
     _preflight(cfg, needs=("editor", "reviewers"))
-    ms = _open(args.manuscript, args.main, prefer_pdf=True)
+    ms = _open(args.manuscript, args.main)
+
+    if isinstance(ms, PdfSubmission):
+        return _review_pdf(cfg, ms, args)
+
+    history = SubmissionHistory.load(
+        args.history or Path(ms.root) / ".manuscript-agent"
+    )
+    if args.fresh:
+        history.rounds = []
+    store = VersionStore(history.directory / "versions", cfg.compile_pdf, cfg.engine)
+    store.versions = []
+    version = store.freeze(ms.root, Path(ms.main), history.next_vid())
+    _log(f"Frozen {version.stamp()}")
+    if version.build_attempted and version.pdf is None:
+        raise BuildError(
+            "the manuscript does not compile, so there is nothing to submit:\n"
+            + "\n".join(version.build_errors[:8])
+        )
+
+    pkg = version.package
+    checks = run_checks(version, pkg, cfg.page_limit or cfg.venue.page_limit,
+                        cfg.enforce_page_limit)
+    if checks.findings:
+        _log(f"Checks: {checks.summary()}")
+        for f in checks.findings[:8]:
+            _log(f"  {f.render()[2:]}")
+
+    previous = history.previous_reviews()
+    letter = Path(args.letter).read_text() if args.letter else ""
+    changes = ""
+    if history.last and previous:
+        prior_root = history.directory / "versions" / history.last.vid
+        if prior_root.exists():
+            changes = tree_patch(prior_root, version.root, history.last.vid,
+                                 history.last.source_hash).text
+            _log(f"Continuing round {history.next_number()}: "
+                 f"{history.last.vid} -> {version.vid}, "
+                 f"{len(changes.splitlines())} diff lines since your last submission")
+        if not letter:
+            _log("  (no --letter given; reviewers will judge the diff on its own)")
+
+    pdf = Attachment.from_path(version.pdf) if version.pdf else None
+    artifacts = pkg.artifact_manifest()
+    reviews = []
+    for persona, spec in zip(cfg.personas, cfg.reviewer_models):
+        _log(f"{persona.id} ({persona.name}) reading... [{spec}]")
+        sr = ReviewerAgent(build(spec), cfg.venue).review(
+            pkg, persona,
+            previous_review_md=previous.get(persona.id),
+            response_letter=letter or (previous and "(no response letter was provided)"),
+            pdf=pdf, stamp=version.stamp(), artifacts=artifacts, changes=changes,
+        )
+        r = sr.review
+        carried = ""
+        if r.prior_points:
+            done = sum(1 for x in r.prior_points if x.verdict == "resolved")
+            carried = f", {done}/{len(r.prior_points)} prior points resolved"
+        _log(f"  -> {r.recommendation} (overall {r.overall}/10, "
+             f"{len(r.points)} points{carried})")
+        reviews.append(sr)
+
+    misanchored = misanchored_points(reviews, version.vid)
+    dropped = dropped_prior_points(reviews, history.previous_labels())
+    _log("editor adjudicating...")
+    meta = EditorAgent(build(cfg.editor_model), cfg.venue).decide(
+        pkg, reviews, history.next_number(), history.next_number(),
+        history=history.decision_history(), response_letter=letter,
+        pdf=pdf, checks=checks.render(), misanchored=misanchored + dropped,
+    )
+    _log(f"editor -> {meta.decision.upper()}")
+
+    rd = history.directory / f"round-{history.next_number()}"
+    rd.mkdir(parents=True, exist_ok=True)
+    (rd / "version.txt").write_text(version.stamp() + "\n")
+    (rd / "reviews.md").write_text(reviews_md(reviews))
+    (rd / "reviews.json").write_text(
+        json.dumps([r.model_dump() for r in reviews], indent=2))
+    (rd / "meta-review.md").write_text(meta_md(meta))
+    (rd / "checks.md").write_text(checks.render())
+    if changes:
+        (rd / "changes-since-last-round.diff").write_text(changes)
+    if dropped:
+        (rd / "dropped-points.md").write_text("\n".join(dropped) + "\n")
+    if letter:
+        (rd / "response-letter.md").write_text(letter)
+    if pdf:
+        shutil.copyfile(version.pdf, rd / "submitted.pdf")
+
+    history.record(version, reviews, meta, letter)
+    (history.directory / "summary.md").write_text(history.summary())
+
+    report = reviews_md(reviews) + "\n" + meta_md(meta)
+    if args.out:
+        Path(args.out).write_text(report)
+        _log(f"Wrote {args.out}")
+
+    _log(f"\nRound {history.next_number() - 1} complete: {meta.decision.upper()}")
+    _log(f"  reviews:     {rd / 'reviews.md'}")
+    _log(f"  decision:    {rd / 'meta-review.md'}")
+    _log(f"  history:     {history.directory / 'summary.md'}")
+    _log("\nRevise the sources yourself, then run the same command again for the next round.")
+    _log("Add --letter response.md to tell the reviewers what you changed.")
+    return 0
+
+
+def _review_pdf(cfg, ms, args) -> int:
+    """A PDF with no sources: one round, no history to keep."""
     pdf = _compile(ms, cfg)
     reviews = []
     for persona, spec in zip(cfg.personas, cfg.reviewer_models):
         _log(f"{persona.id} ({persona.name}) reading... [{spec}]")
         reviews.append(
-            ReviewerAgent(build(spec), cfg.venue).review(ms, persona, pdf=pdf)
-        )
+            ReviewerAgent(build(spec), cfg.venue).review(ms, persona, pdf=pdf))
     _log(f"editor adjudicating... [{cfg.editor_model}]")
-    editor = EditorAgent(build(cfg.editor_model), cfg.venue)
-    meta = editor.decide(ms, reviews, 1, 1, pdf=pdf)
+    meta = EditorAgent(build(cfg.editor_model), cfg.venue).decide(ms, reviews, 1, 1, pdf=pdf)
     report = reviews_md(reviews) + "\n" + meta_md(meta)
     if args.out:
         Path(args.out).write_text(report)
@@ -295,6 +411,17 @@ def build_parser() -> argparse.ArgumentParser:
     r = sub.add_parser("review", help="one review round, no revision")
     r.add_argument("manuscript", help="a file, or a directory holding the submission package")
     r.add_argument("--main", help="main source file, when a package has more than one")
+    r.add_argument(
+        "--letter",
+        help="your response letter for this round, telling the reviewers what you changed",
+    )
+    r.add_argument(
+        "--history",
+        help="where rounds are kept (default: <package>/.manuscript-agent)",
+    )
+    r.add_argument(
+        "--fresh", action="store_true", help="ignore previous rounds and start over at v1"
+    )
     r.add_argument("-o", "--out", help="write the report here instead of stdout")
     common(r)
     r.set_defaults(func=cmd_review)

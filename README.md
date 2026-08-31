@@ -73,8 +73,10 @@ each command.
 # draft from a brief
 manuscript-agent write examples/brief.md -o paper.md --venue biomed-journal
 
-# one review round, nothing rewritten
-manuscript-agent review paper.md --adversarial -o review-report.md
+# review a round; you revise by hand; review again — the reviewers remember
+manuscript-agent review ./paper --adversarial
+#   ... you edit the sources yourself ...
+manuscript-agent review ./paper --adversarial --letter response.md
 
 # the full loop
 manuscript-agent submit paper.md --rounds 3 --venue cs-conference
@@ -91,6 +93,43 @@ manuscript-agent submit paper.md --venue-file examples/venue-custom.json
 
 Without `--in-place`, `submit` works on a copy — `paper.revised.md`, or `mypaper.revised/`
 for a package — and leaves your original alone.
+
+## The manual loop (recommended)
+
+`review` is one round: freeze the sources, compile, four reviewers read the PDF, the editor
+adjudicates. Then **you** revise. Run it again and the same reviewers pick up where they left
+off.
+
+```bash
+manuscript-agent review ./paper --adversarial          # round 1
+#   ... you revise the sources ...
+manuscript-agent review ./paper --adversarial --letter response.md   # round 2
+```
+
+Rounds are kept in `<package>/.manuscript-agent/` — versions, reviews, decisions and a running
+score table — so the second command can be days later, in a new shell, and round 2 still
+carries:
+
+- each reviewer's **own** previous review, and a required verdict on every point it raised
+  (`resolved` / `partially_resolved` / `unresolved` / `withdrawn`) with where it checked
+- **the diff of your manual edits**, so claims can be checked against what you actually did
+- your response letter, if you wrote one (`--letter`); without it the reviewers judge the
+  diff on its own and are told so
+
+`.manuscript-agent/summary.md` is the running record:
+
+| Round | Version | Pages | R1 | R2 | Editor |
+| --- | --- | --- | --- | --- | --- |
+| 1 | v1 | 19 | 4/10 major_revision | 4/10 major_revision | major_revision |
+| 2 | v2 | 19 | 6/10 major_revision | 7/10 accept | major_revision |
+
+The mechanical checks run on every round, so if your revision broke a citation, left a `TODO`,
+unbalanced a `$` or referenced a missing figure, you hear about it before the reviewers do.
+`--fresh` starts over at v1; `--history DIR` puts the record somewhere else.
+
+`submit` still runs the fully automatic loop — the author agent proposes patches and a
+promotion gate merges them — if you ever want it. The manual loop is the better default:
+you keep the writing, and the agent does the part it is actually good at.
 
 ## Submission packages
 
