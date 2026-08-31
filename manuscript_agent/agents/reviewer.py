@@ -65,8 +65,8 @@ anything essential is missing from the presentation.
 
 Produce your review."""
 
-REREVIEW_PDF = """You reviewed an earlier version of this manuscript. Your previous review and
-the authors' response letter are below; the revised manuscript is attached as a PDF.
+REREVIEW_PDF = """You reviewed an earlier version of this manuscript. You are the same
+reviewer, continuing your own assessment — not a fresh pair of eyes.
 
 <your_previous_review>
 {previous}
@@ -75,16 +75,32 @@ the authors' response letter are below; the revised manuscript is attached as a 
 <author_response>
 {response}
 </author_response>
+{changes}
+The revised manuscript is attached as a PDF.
 
-Re-review the revised manuscript. For each of your previous points, judge whether it was
-actually addressed in the article — not merely promised in the response letter. Verify claimed
-changes against the attached PDF, figures included. Raise your scores where the revision
-genuinely fixed something, hold them where it did not, and lower them if the revision
-introduced new problems. Do not re-raise resolved points, and do not manufacture new blocking
-points to justify a low score."""
+Work through your previous points first. `prior_points` must contain exactly one entry for
+every point you raised last time, using the same labels, with a verdict and the place in the
+current version where you checked. Judge the article, not the response letter: a change that
+was promised but not made is 'unresolved'. Mark a point 'withdrawn' only if you now think you
+were wrong, and say so.
 
-REREVIEW = """You reviewed an earlier version of this manuscript. Here is your previous
-review, the authors' response letter, and the revised manuscript.
+Then raise `points` for what remains or is newly wrong. Do not re-raise anything you just
+marked resolved, and do not manufacture new blocking points to keep your score where it was.
+
+Your overall score should move if the manuscript moved. State plainly in `score_change` what
+changed it, or why it held — and be willing to say the revision improved the paper."""
+
+CHANGES = """
+<changes_since_your_review>
+This is the diff the authors applied since the version you reviewed. Use it to check their
+claims, and to find edits the response letter does not mention:
+
+{diff}
+</changes_since_your_review>
+"""
+
+REREVIEW = """You reviewed an earlier version of this manuscript. You are the same reviewer,
+continuing your own assessment — not a fresh pair of eyes.
 
 <your_previous_review>
 {previous}
@@ -93,17 +109,22 @@ review, the authors' response letter, and the revised manuscript.
 <author_response>
 {response}
 </author_response>
-
+{changes}
 <revised_manuscript format="{fmt}">
 {text}
 </revised_manuscript>
 
-Re-review the revised manuscript. For each of your previous points, judge whether it was
-actually addressed in the text — not merely promised in the response letter. Verify claimed
-edits against the manuscript. Raise your scores where the revision genuinely fixed something,
-hold them where it did not, and lower them if the revision introduced new problems. Do not
-re-raise points that are now resolved, and do not manufacture new blocking points to justify
-a low score."""
+Work through your previous points first. `prior_points` must contain exactly one entry for
+every point you raised last time, using the same labels, with a verdict and the place in the
+current version where you checked. Judge the manuscript, not the response letter: a change
+that was promised but not made is 'unresolved'. Mark a point 'withdrawn' only if you now
+think you were wrong, and say so.
+
+Then raise `points` for what remains or is newly wrong. Do not re-raise anything you just
+marked resolved, and do not manufacture new blocking points to keep your score where it was.
+
+Your overall score should move if the manuscript moved. State plainly in `score_change` what
+changed it, or why it held — and be willing to say the revision improved the paper."""
 
 
 class ReviewerAgent:
@@ -131,12 +152,17 @@ class ReviewerAgent:
         pdf: Attachment | None = None,
         stamp: str = "",
         artifacts: str = "",
+        changes: str = "",
     ) -> ScoredReview:
         """Read the submitted PDF when there is one; fall back to the sources otherwise."""
         resubmission = bool(previous_review_md and response_letter)
         if pdf:
             prompt = (
-                REREVIEW_PDF.format(previous=previous_review_md, response=response_letter)
+                REREVIEW_PDF.format(
+                    previous=previous_review_md,
+                    response=response_letter,
+                    changes=CHANGES.format(diff=changes[:60000]) if changes else "",
+                )
                 if resubmission
                 else FIRST_PDF
             )
@@ -144,6 +170,7 @@ class ReviewerAgent:
             prompt = REREVIEW.format(
                 previous=previous_review_md,
                 response=response_letter,
+                changes=CHANGES.format(diff=changes[:60000]) if changes else "",
                 fmt=manuscript.fmt,
                 text=manuscript.text,
             )

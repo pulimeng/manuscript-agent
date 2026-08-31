@@ -70,7 +70,8 @@ class StubLLM:
                 "reviewers must receive the compiled PDF"
             assert "attached as a PDF" in prompt and "%%% FILE:" not in prompt, \
                 "reviewers must read the PDF, not the sources"
-            return Review(version_reviewed=VID["v"], summary="s", points=[ReviewPoint(label="W1", kind="weakness", version=VID["v"], page=1,
+            return Review(version_reviewed=VID["v"], summary="s", prior_points=[],
+                          score_change="n/a", points=[ReviewPoint(label="W1", kind="weakness", version=VID["v"], page=1,
                           artifact_status="not_applicable", section="§3", comment="c", severity="major")], soundness=3,
                           novelty=3, clarity=3, overall=5, confidence=4,
                           recommendation="major_revision")

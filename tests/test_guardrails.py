@@ -17,7 +17,8 @@ VID = {"v": "v1"}
 class StubLLM:
     def parse(self, system, prompt, schema, max_tokens=16000):
         if schema is Review:
-            return Review(version_reviewed=VID["v"], summary="s", points=[ReviewPoint(label="W1", kind="weakness", version=VID["v"], page=1,
+            return Review(version_reviewed=VID["v"], summary="s", prior_points=[],
+                          score_change="n/a", points=[ReviewPoint(label="W1", kind="weakness", version=VID["v"], page=1,
                           artifact_status="not_applicable", section="§4", comment="run a prospective trial", severity="blocking")],
                           soundness=2, novelty=4, clarity=4, overall=4, confidence=5,
                           recommendation="major_revision")

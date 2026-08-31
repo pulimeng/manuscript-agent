@@ -23,6 +23,11 @@ def review_md(sr: ScoredReview) -> str:
         r.summary,
         "",
     ]
+    if r.prior_points:
+        lines += ["**Verdict on my previous points**", ""]
+        for pp in r.prior_points:
+            lines.append(f"- `{pp.label}` — **{pp.verdict}**: {pp.evidence}")
+        lines += ["", f"*Score change:* {r.score_change}", ""]
     for kind, title in (
         ("strength", "Strengths"),
         ("weakness", "Weaknesses"),

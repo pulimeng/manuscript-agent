@@ -286,6 +286,15 @@ packages, each with the PDF built from exactly those sources and a SHA-256 over 
 version stamp — `v2 | source sha256:… | pdf sha256:… | 9 pages` — goes into every review
 prompt, so a review can always be traced to the bytes it was made against.
 
+**A resubmission keeps its reviewers.** On round 2+ each reviewer receives its own previous
+review, the response letter, and **the actual diff** the authors applied — and must return
+`prior_points`: one verdict per point it raised last time (`resolved` / `partially_resolved` /
+`unresolved` / `withdrawn`) with the place in the current version where it checked. It is told
+to judge the manuscript rather than the letter, so a change promised but not made is
+`unresolved`. A point raised last round and not revisited is recorded in `dropped-points.md`
+and reported to the editor, who is told not to read silence as resolution. `score_change`
+records what moved the overall score, or why it held.
+
 **Reviewers comment, they never edit.** Their only output is structured critique. Every point
 must carry the version id it refers to and the page it appears on; points naming a different
 version are collected in `misanchored.md` and the editor is told to treat them as unverified
@@ -402,6 +411,7 @@ python tests/test_guardrails.py    # impossible request -> declined -> editor ru
 python tests/test_fabrication.py   # invented result -> detect, repair, escalate, fail
 python tests/test_package.py       # package discovery, per-file write-back, PDF submission
 python tests/test_versioning.py    # freeze and hash, patch proposals, the promotion gate
+python tests/test_continuity.py    # a resubmission is judged by the same reviewer
 ```
 
 ## Licence

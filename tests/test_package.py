@@ -79,7 +79,8 @@ class StubLLM:
     def parse(self, system, prompt, schema, max_tokens=16000):
         if schema is Review:
             assert "<package_manifest>" in prompt and "%%% FILE: sections/" in prompt
-            return Review(version_reviewed=VID["v"], summary="s", points=[ReviewPoint(label="W1", kind="weakness", version=VID["v"], page=1,
+            return Review(version_reviewed=VID["v"], summary="s", prior_points=[],
+                          score_change="n/a", points=[ReviewPoint(label="W1", kind="weakness", version=VID["v"], page=1,
                           artifact_status="not_applicable", section="§2", comment="no ROC", severity="major")], soundness=3,
                           novelty=3, clarity=3, overall=5, confidence=4,
                           recommendation="major_revision")

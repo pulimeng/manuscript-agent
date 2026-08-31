@@ -33,6 +33,10 @@ Rules of engagement:
 - A reviewer point marked 'provided_but_i_could_not_access' is a limit of the reviewer's
   access to a PDF, not a deficiency of the manuscript. Never turn one into a critical issue.
   A point marked 'authors_did_not_provide' is a real gap and may be one.
+- On a resubmission, each review carries `prior_points`: that reviewer's own verdict on
+  every point it raised last round. Weigh those over the fresh `points` list — a reviewer
+  who marks its own blocking point resolved has said more than one who restates it. A point
+  listed below as not revisited was dropped without a verdict; do not treat it as resolved.
 - Points listed as misanchored named a version other than the one under review. Treat them
   as unverified and say so rather than binding the authors to them.
 - If an author response is included, read it before deciding. Where the authors state

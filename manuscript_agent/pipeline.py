@@ -92,6 +92,25 @@ def unaddressed_issues(meta: MetaReview, plan: RevisionPlan) -> List[str]:
     return missing
 
 
+def dropped_prior_points(
+    reviews: List[ScoredReview], previous: Dict[str, List[str]]
+) -> List[str]:
+    """Points a reviewer raised last round and did not account for this round.
+
+    A re-review that quietly forgets its own criticism is indistinguishable from a fresh
+    reviewer, which is exactly what a resubmission is not.
+    """
+    out = []
+    for sr in reviews:
+        before = set(previous.get(sr.reviewer_id, []))
+        if not before:
+            continue
+        accounted = {p.label for p in sr.review.prior_points}
+        for label in sorted(before - accounted):
+            out.append(f"{sr.reviewer_id}-{label} was raised last round and not revisited")
+    return out
+
+
 def misanchored_points(reviews: List[ScoredReview], vid: str) -> List[str]:
     """Criticisms that name a version other than the one under review."""
     out = []
@@ -144,6 +163,7 @@ class SubmissionPipeline:
         response_letter: Optional[str],
         pdf: Optional[Attachment],
         artifacts: str,
+        changes: str = "",
     ) -> List[ScoredReview]:
         def one(pair):
             persona, agent = pair
@@ -156,11 +176,16 @@ class SubmissionPipeline:
                 pdf=pdf,
                 stamp=version.stamp(),
                 artifacts=artifacts,
+                changes=changes,
             )
             r = sr.review
+            carried = ""
+            if r.prior_points:
+                resolved = sum(1 for p in r.prior_points if p.verdict == "resolved")
+                carried = f", {resolved}/{len(r.prior_points)} prior points resolved"
             self.on_event(
                 f"  {persona.id} -> {r.recommendation} "
-                f"(overall {r.overall}/10, {len(r.points)} points)"
+                f"(overall {r.overall}/10, {len(r.points)} points{carried})"
             )
             return sr
 
@@ -232,6 +257,8 @@ class SubmissionPipeline:
             )
 
         previous_reviews: Dict[str, str] = {}
+        previous_labels: Dict[str, List[str]] = {}
+        last_patch = ""
         response_letter: Optional[str] = None
         out_of_scope: List[str] = []
         unaddressed: List[str] = []
@@ -253,13 +280,18 @@ class SubmissionPipeline:
                 shutil.copyfile(version.pdf, rd / "submitted.pdf")
 
             reviews = self._collect_reviews(
-                version, previous_reviews, response_letter, pdf, artifacts
+                version, previous_reviews, response_letter, pdf, artifacts, last_patch
             )
             (rd / "reviews.md").write_text(reviews_md(reviews))
             (rd / "reviews.json").write_text(
                 json.dumps([r.model_dump() for r in reviews], indent=2)
             )
             misanchored = misanchored_points(reviews, version.vid)
+            dropped = dropped_prior_points(reviews, previous_labels)
+            if dropped:
+                (rd / "dropped-points.md").write_text("\n".join(dropped) + "\n")
+                self.on_event(f"  {len(dropped)} prior point(s) were not revisited")
+                misanchored = misanchored + dropped
             if misanchored:
                 (rd / "misanchored.md").write_text("\n".join(misanchored) + "\n")
                 self.on_event(f"  {len(misanchored)} point(s) cite the wrong version")
@@ -359,6 +391,10 @@ class SubmissionPipeline:
             self.on_event(f"  promoted -> {version.stamp()}")
 
             previous_reviews = {r.reviewer_id: review_md(r) for r in reviews}
+            previous_labels = {
+                r.reviewer_id: [p.label for p in r.review.points] for r in reviews
+            }
+            last_patch = patch.text
             response_letter = letter
 
         result.versions = list(store.versions)

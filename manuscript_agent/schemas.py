@@ -45,11 +45,32 @@ class ReviewPoint(BaseModel):
     )
 
 
+class PriorPointVerdict(BaseModel):
+    """What became of one point from your own previous review."""
+
+    label: str = Field(description="The label from your previous review, e.g. 'W2'.")
+    verdict: Literal["resolved", "partially_resolved", "unresolved", "withdrawn"] = Field(
+        description="'withdrawn' only if you now believe the point was mistaken."
+    )
+    evidence: str = Field(
+        description="Where in the current version you checked, and what you found there. "
+        "Cite the text, not the response letter."
+    )
+
+
 class Review(BaseModel):
     version_reviewed: str = Field(
         description="The version id you were given, copied exactly, e.g. 'v2'."
     )
     summary: str = Field(description="Neutral summary of what the manuscript claims and does.")
+    prior_points: List[PriorPointVerdict] = Field(
+        description="One entry for every point in your previous review, if you were given "
+        "one. Empty list on a first review."
+    )
+    score_change: str = Field(
+        description="If you reviewed an earlier version, say what moved your overall score "
+        "since then, or why it held. 'n/a' on a first review."
+    )
     points: List[ReviewPoint]
     soundness: Score5
     novelty: Score5
