@@ -103,9 +103,11 @@ your sources ──freeze──► v2 (hashed, compiled)
                           └── editor adjudicates ──► decision + critical issues
 ```
 
-Rounds are kept in `<package>/.manuscript-agent/` — versions, reviews, decisions and a running
-score table — so the second command can be days later, in a new shell, and round 2 still
-carries:
+Rounds are kept in `runs/<package-name>/` — versions, reviews, decisions and a running score
+table. The directory is named after the manuscript rather than timestamped, which is what lets
+the second command be days later, in a new shell, and still be round 2. Nothing is written
+into your package: the history is a record of the review, not part of the paper, and it should
+not travel with the sources you upload.
 
 - each reviewer's **own** previous review, and a required verdict on every point it raised
   (`resolved` / `partially_resolved` / `unresolved` / `withdrawn`) with where it checked
@@ -123,13 +125,14 @@ carries:
 The mechanical checks run on every round, so if your revision broke a citation, left a `TODO`,
 unbalanced a `$` or referenced a missing figure, you hear about it before the reviewers do.
 `--history DIR` puts the record somewhere else. `--fresh` starts over at v1 — it **archives**
-the existing history to `.manuscript-agent.archived-<timestamp>` beside it rather than
+the existing history to `runs/<name>.archived-<timestamp>` beside it rather than
 overwriting the artifacts, which is what you want after changing the venue, the panel, or the
 reviewer instructions: rounds judged under different rules should not be carried forward as
 though they were comparable.
 
-History written by an earlier version is migrated when it is read, so upgrading needs no
-action. Fields that did not exist then are backfilled conservatively — a point recorded before
+A history left inside a package by an earlier version (`<package>/.manuscript-agent/`) is
+moved out to `runs/` the next time you run `review`, archives included. History written under
+an older schema is migrated when it is read, so upgrading needs no action. Fields that did not exist then are backfilled conservatively — a point recorded before
 `verification` existed is marked `inferred`, never `verified_in_manuscript`.
 
 ## Submission packages
@@ -198,7 +201,8 @@ changed files.
 
 ## What you get
 
-`review` writes into `<package>/.manuscript-agent/` (move it with `--history`):
+`review` writes into `runs/<package-name>/` (`--outdir` moves the parent, `--history` names
+this manuscript's directory outright):
 
 ```
 versions/v1/           the sealed sources, plus v1.pdf built from exactly them

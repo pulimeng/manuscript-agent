@@ -1,5 +1,5 @@
 """Manual workflow: review, revise by hand, review again — reviewers carry over."""
-import shutil, sys
+import os, shutil, sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -8,6 +8,11 @@ from manuscript_agent.history import SubmissionHistory
 from manuscript_agent.schemas import (Review, ReviewPoint, PriorPointVerdict, MetaReview)
 
 ROOT = Path(sys.argv[1] if len(sys.argv) > 1 else "/tmp") / "ma-test-manual"
+os.chdir(Path(sys.argv[1] if len(sys.argv) > 1 else "/tmp"))   # runs/ is relative to cwd
+shutil.rmtree(Path("runs") / "ma-test-manual", ignore_errors=True)
+shutil.rmtree(Path("runs") / "fresh", ignore_errors=True)
+for stale in Path("runs").glob("*.archived-*"):
+    shutil.rmtree(stale, ignore_errors=True)
 shutil.rmtree(ROOT, ignore_errors=True); (ROOT / "sections").mkdir(parents=True)
 (ROOT / "main.md").write_text("# Paper\n\nNo ablation reported.\n")
 
@@ -42,10 +47,12 @@ args = ["review", str(ROOT), "--no-compile", "--reviewers", "2"]
 
 # --- round 1 -------------------------------------------------------------
 assert cli.main(args) == 0
-hist = SubmissionHistory.load(ROOT / ".manuscript-agent")
+HIST = Path("runs") / "ma-test-manual"          # keyed by package name, outside the package
+hist = SubmissionHistory.load(HIST)
 assert len(hist.rounds) == 1 and hist.rounds[0].vid == "v1"
-assert (ROOT / ".manuscript-agent/round-1/reviews.md").exists()
-assert (ROOT / ".manuscript-agent/versions/v1/main.md").exists()
+assert (HIST / "round-1/reviews.md").exists()
+assert (HIST / "versions/v1/main.md").exists()
+assert not (ROOT / ".manuscript-agent").exists(), "nothing may be written into the package"
 print("round 1 recorded:", hist.rounds[0].vid, hist.rounds[0].decision)
 
 # --- you revise by hand --------------------------------------------------
@@ -54,7 +61,7 @@ print("round 1 recorded:", hist.rounds[0].vid, hist.rounds[0].decision)
 
 # --- round 2 -------------------------------------------------------------
 assert cli.main(args + ["--letter", str(ROOT / "letter.md")]) == 0
-hist = SubmissionHistory.load(ROOT / ".manuscript-agent")
+hist = SubmissionHistory.load(HIST)
 assert len(hist.rounds) == 2 and hist.rounds[1].vid == "v2", hist.rounds
 assert hist.rounds[0].source_hash != hist.rounds[1].source_hash, "v2 must differ from v1"
 
@@ -69,11 +76,11 @@ for needle, what in (
     assert needle in r2, f"round-2 prompt lacks {what}"
 print("round 2 carries: prior review, your letter, your diff")
 
-assert (ROOT / ".manuscript-agent/round-2/changes-since-last-round.diff").exists()
-assert (ROOT / ".manuscript-agent/round-2/response-letter.md").exists()
+assert (HIST / "round-2/changes-since-last-round.diff").exists()
+assert (HIST / "round-2/response-letter.md").exists()
 second = hist.rounds[1].reviews[0].review
 assert second.prior_points[0].verdict == "resolved" and second.overall == 7
-table = (ROOT / ".manuscript-agent/summary.md").read_text()
+table = (HIST / "summary.md").read_text()
 assert "| 1 |" in table and "| 2 |" in table and "4/10" in table and "7/10" in table
 print("history table:\n" + table.strip())
 
@@ -118,14 +125,15 @@ FR = ROOT / "fresh"; FR.mkdir(parents=True)
 (FR / "main.md").write_text("# Paper\n\nFirst version.\n")
 fresh_args = ["review", str(FR), "--no-compile", "--reviewers", "2"]
 assert cli.main(fresh_args) == 0
-before = (FR / ".manuscript-agent/round-1/reviews.md").read_text()
+FRH = Path("runs") / "fresh"
+before = (FRH / "round-1/reviews.md").read_text()
 
 assert cli.main(fresh_args + ["--fresh"]) == 0
-archives = sorted(FR.glob(".manuscript-agent.archived-*"))
+archives = sorted(Path("runs").glob("fresh.archived-*"))
 assert len(archives) == 1, archives
 assert (archives[0] / "round-1/reviews.md").read_text() == before, "old reviews must survive"
 
-restarted = SubmissionHistory.load(FR / ".manuscript-agent")
+restarted = SubmissionHistory.load(FRH)
 assert len(restarted.rounds) == 1 and restarted.rounds[0].vid == "v1", restarted.rounds
 assert not restarted.rounds[0].reviews[0].review.prior_points, \
     "a fresh start must not carry prior points"

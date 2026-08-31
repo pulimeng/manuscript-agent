@@ -28,6 +28,7 @@ from .pipeline import (
     misanchored_points,
     overweighted_reviews,
     panel_correlation,
+    slugify,
 )
 from .pipeline import SubmissionPipeline
 from .render import meta_md, reviews_md
@@ -102,6 +103,40 @@ def _preflight(cfg, needs=("author", "editor", "reviewers")) -> None:
 
 WORD_SUFFIXES = {".docx", ".doc", ".odt", ".rtf", ".pages"}
 SUBMISSION_ORDER = (".pdf", ".tex", ".md")
+
+
+LEGACY_HISTORY = ".manuscript-agent"
+
+
+def _history_dir(ms, args) -> Path:
+    """Where this manuscript's rounds live.
+
+    Outside the package, under a visible `runs/<name>/`: the history is a record of the
+    review, not part of the paper, and it should not travel with the sources you upload.
+    Keyed by package name rather than timestamped, because continuity across separate
+    invocations is the whole point.
+    """
+    if args.history:
+        return Path(args.history)
+    chosen = Path(args.outdir) / slugify(Path(ms.root).name or Path(ms.path).stem)
+
+    legacy = Path(ms.root) / LEGACY_HISTORY
+    if legacy.exists() and not (chosen / "state.json").exists():
+        chosen.parent.mkdir(parents=True, exist_ok=True)
+        if chosen.exists():
+            shutil.rmtree(chosen)
+        shutil.move(str(legacy), str(chosen))
+        _log("Moved the review history out of your package:")
+        _log(f"  {legacy}  ->  {chosen}")
+
+    # archives left by an earlier --fresh belong outside the package too
+    for old in sorted(Path(ms.root).glob(f"{LEGACY_HISTORY}.archived-*")):
+        target = chosen.with_name(f"{chosen.name}{old.name[len(LEGACY_HISTORY):]}")
+        if not target.exists():
+            chosen.parent.mkdir(parents=True, exist_ok=True)
+            shutil.move(str(old), str(target))
+            _log(f"  {old.name}  ->  {target}")
+    return chosen
 
 
 def _open(target: str, main: str = None, prefer_pdf: bool = False):
@@ -189,7 +224,7 @@ def cmd_review(args) -> int:
     if isinstance(ms, PdfSubmission):
         return _review_pdf(cfg, ms, args)
 
-    history_dir = Path(args.history or Path(ms.root) / ".manuscript-agent")
+    history_dir = _history_dir(ms, args)
     if args.fresh and (history_dir / "state.json").exists():
         stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
         archived = history_dir.with_name(f"{history_dir.name}.archived-{stamp}")
@@ -296,12 +331,18 @@ def cmd_review(args) -> int:
         Path(args.out).write_text(report)
         _log(f"Wrote {args.out}")
 
+    def show(path: Path) -> str:
+        try:
+            return str(path.relative_to(Path.cwd()))
+        except ValueError:
+            return str(path)
+
     _log(f"\nRound {history.next_number() - 1} complete: {meta.decision.upper()}")
-    _log(f"  reviews:     {rd / 'reviews.md'}")
-    _log(f"  decision:    {rd / 'meta-review.md'}")
-    _log(f"  history:     {history.directory / 'summary.md'}")
-    _log("\nRevise the sources yourself, then run the same command again for the next round.")
-    _log("Add --letter response.md to tell the reviewers what you changed.")
+    _log(f"  reviews    {show(rd / 'reviews.md')}")
+    _log(f"  decision   {show(rd / 'meta-review.md')}")
+    _log(f"  history    {show(history.directory / 'summary.md')}")
+    _log("\nRevise your sources, then run the same command for round "
+         f"{history.next_number()}. Add --letter response.md to say what you changed.")
     return 0
 
 
@@ -434,8 +475,10 @@ def build_parser() -> argparse.ArgumentParser:
         help="your response letter for this round, telling the reviewers what you changed",
     )
     r.add_argument(
-        "--history",
-        help="where rounds are kept (default: <package>/.manuscript-agent)",
+        "--outdir", default="runs", help="where review histories are kept (default: runs)"
+    )
+    r.add_argument(
+        "--history", help="this manuscript's history directory (default: <outdir>/<name>)"
     )
     r.add_argument(
         "--fresh",
