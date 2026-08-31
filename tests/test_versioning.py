@@ -52,7 +52,12 @@ report = run_checks(trial, trial.package, page_limit=1)
 kinds = {f.check for f in report.blocking}
 assert not report.passed() and {"stale-wording", "citations"} <= kinds, report.render()
 assert any(f.check == "stale-wording" and f.severity == "warning" for f in report.findings)
-print("checks ok:", report.summary(), "->", sorted(kinds))
+# a length breach warns by default: cutting pages is a rewrite, not a mechanical repair
+assert "pages" not in kinds, "the page limit must not block unless asked to"
+assert any(f.check == "pages" and f.severity == "warning" for f in report.findings)
+enforced = run_checks(trial, trial.package, page_limit=1, enforce_pages=True)
+assert "pages" in {f.check for f in enforced.blocking}, "--enforce-page-limit must block"
+print("checks ok:", report.summary(), "->", sorted(kinds), "| pages warns, enforces on demand")
 
 good = materialise(v1.root, "main.tex", blocks, ROOT / "good")
 gt = store.evaluate(good, good / "main.tex", "v2-candidate")

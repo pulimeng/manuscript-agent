@@ -309,7 +309,7 @@ apply by hand, or discard. The manuscript itself is only written when a candidat
 | check | blocks promotion when |
 | --- | --- |
 | build | the candidate does not compile |
-| pages | over the venue's page limit (warns when exactly at it) |
+| pages | over `--page-limit`, and only with `--enforce-page-limit` — otherwise it warns |
 | citations | a `\cite` key does not resolve |
 | references | a `\ref` is undefined |
 | figures | the text points at a file the package does not contain |
@@ -318,7 +318,10 @@ apply by hand, or discard. The manuscript itself is only written when a candidat
 | fabrication | numbers, citations or figures with no antecedent in the reviewed version |
 
 A hardcoded cross-reference (`Section 4` rather than `\ref`) is a warning, not a block —
-it is what goes stale when sections move. The author gets `--repair-attempts` tries (default 2) to fix a failing candidate, and is
+it is what goes stale when sections move. Length is a warning too, and no page limit is set
+by default: the count is total PDF pages, which cannot separate main text from references and
+appendices, and asking the author to cut pages is a rewrite rather than a repair — the gate
+will not attempt one. The author gets `--repair-attempts` tries (default 2) to fix a failing candidate, and is
 given the failing checks, the compiler output **and the offending source lines** — TeX
 routinely reports an unbalanced delimiter several lines after the real one, so a line number
 alone is not enough to act on. If the candidate still fails, it is not promoted and the run

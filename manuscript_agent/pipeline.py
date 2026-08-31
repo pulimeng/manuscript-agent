@@ -225,12 +225,17 @@ class SubmissionPipeline:
         patch = tree_patch(version.root, candidate, version.vid, version.source_hash)
         return candidate, main_rel, patch
 
+    def _page_limit(self) -> Optional[int]:
+        return self.config.page_limit or self.config.venue.page_limit
+
     def _check_candidate(
         self, store: VersionStore, candidate: Path, main_rel: str, vid: str,
         version: Version, citations,
     ) -> tuple:
         trial = store.evaluate(candidate, candidate / main_rel, vid)
-        report = run_checks(trial, trial.package, self.config.venue.page_limit)
+        report = run_checks(
+            trial, trial.package, self._page_limit(), self.config.enforce_page_limit
+        )
         integrity = self._integrity_report(
             version.package.text, trial.package.text, trial.package, citations
         )
@@ -273,7 +278,7 @@ class SubmissionPipeline:
 
             pkg = version.package
             artifacts = pkg.artifact_manifest()
-            baseline = run_checks(version, pkg, self.config.venue.page_limit)
+            baseline = run_checks(version, pkg, self._page_limit(), self.config.enforce_page_limit)
             (rd / "checks.md").write_text(baseline.render())
             pdf = Attachment.from_path(version.pdf) if version.pdf else None
             if pdf:
@@ -376,7 +381,12 @@ class SubmissionPipeline:
                 (rd / "MERGE_STATUS").write_text(
                     f"UNMERGED\npatch: {rd / 'revision.patch'}\nreason:\n{report.render()}"
                 )
-                self.on_event("  patch NOT promoted — the run stops with it unmerged")
+                self.on_event("  patch NOT promoted — the run stops with it unmerged:")
+                for f in (report.blocking or [])[:5]:
+                    where = f" ({f.where})" if f.where else ""
+                    self.on_event(f"    {f.check}: {f.message}{where}")
+                for value in integrity.values[:5]:
+                    self.on_event(f"    unsourced: {value}")
                 break
 
             self.on_event("  author writing response letter...")
@@ -422,6 +432,13 @@ class SubmissionPipeline:
                 raise FabricationError(integrity.render())
 
             label = f"repair {attempt + 1}/{self.config.repair_attempts}"
+            if blocking and all(f.check == "pages" for f in blocking):
+                # asking the author to cut pages is a rewrite, not a repair, and inviting one
+                # is how a length breach turns into invented results
+                self.on_event(
+                    "  candidate is over the page limit; that is a rewrite, not a repair"
+                )
+                break
             if blocking:
                 self.on_event(f"  candidate fails {len(blocking)} check(s) — author {label}:")
                 for f in blocking[:4]:

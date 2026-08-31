@@ -41,6 +41,8 @@ def _config(args) -> RunConfig:
         on_fabrication=getattr(args, "on_fabrication", "retry"),
         promote=getattr(args, "promote", "auto"),
         repair_attempts=getattr(args, "repair_attempts", 2),
+        page_limit=getattr(args, "page_limit", None),
+        enforce_page_limit=getattr(args, "enforce_page_limit", False),
         compile_pdf=not getattr(args, "no_compile", False),
         engine=getattr(args, "engine", "pdflatex"),
         ignore_integers_below=getattr(args, "ignore_integers_below", 0),
@@ -313,6 +315,17 @@ def build_parser() -> argparse.ArgumentParser:
             "auto: a candidate patch is merged into the next version once it passes the "
             "checks (default); manual: write the patch and stop, merging nothing"
         ),
+    )
+    s.add_argument(
+        "--page-limit",
+        type=int,
+        help="total pages of the compiled PDF to check against (references and appendices "
+             "included); unset by default",
+    )
+    s.add_argument(
+        "--enforce-page-limit",
+        action="store_true",
+        help="treat a length breach as blocking rather than a warning to the editor",
     )
     s.add_argument(
         "--repair-attempts",

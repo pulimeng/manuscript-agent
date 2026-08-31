@@ -17,7 +17,10 @@ class Venue:
     acceptance_bar: str
     review_form: str
     length_guidance: str = "No hard limit; match the norms of the venue."
-    page_limit: Optional[int] = None  # enforced mechanically on every candidate
+    # Total pages of the compiled PDF. Left unset by default: venue limits are usually on
+    # main text, excluding references and appendices, which a page count cannot distinguish.
+    # Set it deliberately (--page-limit) if you want the check.
+    page_limit: Optional[int] = None
 
     @staticmethod
     def load(path: str | Path) -> "Venue":
@@ -69,7 +72,6 @@ VENUES: dict[str, Venue] = {
             "(soundness, novelty, clarity), overall rating and confidence."
         ),
         length_guidance="8 pages of main text plus unlimited appendix.",
-        page_limit=10,
     ),
     "biomed-journal": Venue(
         name="A mid-to-high tier biomedical journal",
@@ -94,7 +96,6 @@ VENUES: dict[str, Venue] = {
         ),
         review_form="Summary, strengths, weaknesses, recommendation.",
         length_guidance="4 pages.",
-        page_limit=5,
     ),
 }
 
@@ -182,6 +183,8 @@ class RunConfig:
     model: Optional[str] = None  # set to cast one model in every role
     effort: str = "high"
     on_fabrication: str = "retry"  # "warn" | "retry" | "fail"
+    page_limit: Optional[int] = None   # overrides the venue's
+    enforce_page_limit: bool = False   # a length breach warns unless you ask for a block
     repair_attempts: int = 2           # tries the author gets to fix a candidate
     promote: str = "auto"              # "auto" (checks gate) | "manual" (patch only)
     compile_pdf: bool = True           # submit the compiled PDF, as a venue would receive it

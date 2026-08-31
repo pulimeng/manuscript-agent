@@ -78,7 +78,8 @@ def _text_only_checks(report: "CheckReport", package) -> "CheckReport":
     return report
 
 
-def run_checks(version, package, page_limit: Optional[int] = None) -> CheckReport:
+def run_checks(version, package, page_limit: Optional[int] = None,
+               enforce_pages: bool = False) -> CheckReport:
     """Check a freshly built version against the things a submission portal would reject.
 
     `version` is a versions.Version (already compiled); `package` is its Package view.
@@ -109,8 +110,9 @@ def run_checks(version, package, page_limit: Optional[int] = None) -> CheckRepor
         if version.pages > page_limit:
             report.findings.append(
                 Finding(
-                    "pages", BLOCKING,
-                    f"{version.pages} pages exceeds the {page_limit}-page limit for this venue",
+                    "pages", BLOCKING if enforce_pages else WARNING,
+                    f"{version.pages} pages in the PDF (references and appendices included) "
+                    f"exceeds the {page_limit}-page limit set for this run",
                 )
             )
         elif version.pages == page_limit:
