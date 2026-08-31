@@ -58,4 +58,31 @@ good = materialise(v1.root, "main.tex", blocks, ROOT / "good")
 gt = store.evaluate(good, good / "main.tex", "v2-candidate")
 assert run_checks(gt, gt.package, page_limit=10).passed(), run_checks(gt, gt.package).render()
 print("a clean candidate passes")
+
+# --- unbalanced math is caught before the compiler misreports it ---------
+from manuscript_agent.checks import CheckReport, _math_balance, error_context
+
+broken = materialise(
+    v1.root, "main.tex",
+    {"sections/results.tex": "\\section{Results}\n"
+                             "Accuracy rose to ($93.5\\%).\n"          # missing closing $
+                             "\nA later paragraph.\n"},
+    ROOT / "mathbad",
+)
+pkg_bad = Package.load(broken)
+rep = CheckReport(); _math_balance(rep, pkg_bad)
+assert any(f.check == "math" for f in rep.blocking), rep.render()
+assert "sections/results.tex" in rep.blocking[0].where, rep.blocking[0].where
+ctx = error_context(pkg_bad, rep)
+assert "93.5" in ctx and ">" in ctx, "the author must see the offending source line"
+print("math check ok:", rep.blocking[0].where, "| context supplied")
+
+ok_pkg = Package.load(materialise(
+    v1.root, "main.tex",
+    {"sections/results.tex": "\\section{Results}\nAccuracy rose to ($93.5\\%$).\n"
+                             "Escaped \\$5 and \\(x\\) are fine.\n"},
+    ROOT / "mathok"))
+rep2 = CheckReport(); _math_balance(rep2, ok_pkg)
+assert not rep2.blocking, rep2.render()
+print("balanced math, escaped $ and \\( \\) all pass")
 print("VERSIONING OK")

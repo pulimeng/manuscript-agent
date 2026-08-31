@@ -340,11 +340,15 @@ apply by hand, or discard. The manuscript itself is only written when a candidat
 | references | a `\ref` is undefined |
 | figures | the text points at a file the package does not contain |
 | stale wording | `TODO`, `TBD`, `FIXME`, `XXX`, `placeholder` survive into the submission |
+| math | an unclosed `$`, or mismatched `\(` `\)` — caught before the compiler, which blames a later line |
 | fabrication | numbers, citations or figures with no antecedent in the reviewed version |
 
 A hardcoded cross-reference (`Section 4` rather than `\ref`) is a warning, not a block —
-it is what goes stale when sections move. The author gets one repair pass; if the candidate
-still fails, it is not promoted and the run ends with the patch on disk and unmerged.
+it is what goes stale when sections move. The author gets `--repair-attempts` tries (default 2) to fix a failing candidate, and is
+given the failing checks, the compiler output **and the offending source lines** — TeX
+routinely reports an unbalanced delimiter several lines after the real one, so a line number
+alone is not enough to act on. If the candidate still fails, it is not promoted and the run
+ends with the patch on disk and unmerged: a version nobody can compile is not a submission.
 `--promote manual` writes the patch and merges nothing, for when you want to read every
 change yourself.
 

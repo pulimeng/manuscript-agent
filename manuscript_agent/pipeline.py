@@ -19,7 +19,7 @@ from typing import Callable, Dict, List, Optional
 
 from .agents import AuthorAgent, EditorAgent, ReviewerAgent
 from .build import BuildError
-from .checks import CheckReport, run_checks
+from .checks import CheckReport, error_context, run_checks
 from .config import RunConfig
 from .integrity import IntegrityReport, Violation, check
 from .llm import LLM, Attachment
@@ -377,28 +377,36 @@ class SubmissionPipeline:
             self.on_event("  --promote manual: patch written, nothing merged")
             return False, report, integrity
 
-        for attempt in ("first", "repair"):
+        for attempt in range(self.config.repair_attempts + 1):
             blocking = report.blocking
             unsourced = integrity.violations if self.config.on_fabrication != "warn" else []
             if not blocking and not unsourced:
                 return True, report, integrity
-            if attempt == "repair":
+            if attempt == self.config.repair_attempts:
                 break
+            if self.config.on_fabrication == "fail" and unsourced:
+                raise FabricationError(integrity.render())
+
+            label = f"repair {attempt + 1}/{self.config.repair_attempts}"
             if blocking:
-                self.on_event(f"  candidate fails {len(blocking)} check(s) — author repairing:")
-                for f in blocking[:3]:
-                    self.on_event(f"    {f.message}")
-                fixed = self.author.fix_build(
-                    trial.package, report.render() + "\n" + "\n".join(trial.build_errors[:20])
-                )
+                self.on_event(f"  candidate fails {len(blocking)} check(s) — author {label}:")
+                for f in blocking[:4]:
+                    where = f" ({f.where})" if f.where else ""
+                    self.on_event(f"    {f.check}: {f.message}{where}")
+                context = error_context(trial.package, report)
+                detail = report.render()
+                if trial.build_errors:
+                    detail += "\nCompiler output:\n" + "\n".join(trial.build_errors[:20])
+                if context:
+                    detail += "\n\nThe source at those locations:\n" + context
+                fixed = self.author.fix_build(trial.package, detail)
             else:
                 self.on_event(
                     f"  candidate introduces {len(unsourced)} unsourced value(s) — "
-                    "author correcting"
+                    f"author {label}"
                 )
                 fixed = self.author.fix_unsourced(trial.package, integrity.render())
-            if self.config.on_fabrication == "fail" and unsourced:
-                raise FabricationError(integrity.render())
+
             try:
                 blocks = trial.package.proposed_blocks(fixed)
             except Exception as exc:

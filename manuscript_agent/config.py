@@ -188,6 +188,7 @@ class RunConfig:
     model: Optional[str] = None  # set to cast one model in every role
     effort: str = "high"
     on_fabrication: str = "retry"  # "warn" | "retry" | "fail"
+    repair_attempts: int = 2           # tries the author gets to fix a candidate
     promote: str = "auto"              # "auto" (checks gate) | "manual" (patch only)
     compile_pdf: bool = True           # submit the compiled PDF, as a venue would receive it
     engine: str = "pdflatex"

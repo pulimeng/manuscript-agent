@@ -48,6 +48,7 @@ def _config(args) -> RunConfig:
         topic=_topic(args),
         on_fabrication=getattr(args, "on_fabrication", "retry"),
         promote=getattr(args, "promote", "auto"),
+        repair_attempts=getattr(args, "repair_attempts", 2),
         compile_pdf=not getattr(args, "no_compile", False),
         engine=getattr(args, "engine", "pdflatex"),
         ignore_integers_below=getattr(args, "ignore_integers_below", 0),
@@ -327,6 +328,12 @@ def build_parser() -> argparse.ArgumentParser:
             "auto: a candidate patch is merged into the next version once it passes the "
             "checks (default); manual: write the patch and stop, merging nothing"
         ),
+    )
+    s.add_argument(
+        "--repair-attempts",
+        type=int,
+        default=2,
+        help="tries the author gets to fix a candidate that fails the checks (default 2)",
     )
     s.add_argument(
         "--on-fabrication",
