@@ -98,4 +98,25 @@ ok_pkg = Package.load(materialise(
 rep2 = CheckReport(); _math_balance(rep2, ok_pkg)
 assert not rep2.blocking, rep2.render()
 print("balanced math, escaped $ and \\( \\) all pass")
+
+# --- a marker macro's definition is not an unresolved marker -------------
+defs = materialise(
+    v1.root, "main.tex",
+    {"sections/results.tex": "\\newcommand{\\todo}[1]{{\\color{red}[TODO: #1]}}\n"
+                             "\\def\\fixme#1{FIXME: #1}\n"
+                             "\\section{Results}\nClean prose.\n"},
+    ROOT / "defs")
+from manuscript_agent.checks import _scan_sources
+rep_defs = CheckReport(); _scan_sources(rep_defs, Package.load(defs))
+assert not rep_defs.blocking, rep_defs.render()
+
+uses = materialise(
+    v1.root, "main.tex",
+    {"sections/results.tex": "\\newcommand{\\todo}[1]{[TODO: #1]}\n"
+                             "\\section{Results}\n\\todo{run the ablation}\n"
+                             "And [TODO: add numbers] here.\n"},
+    ROOT / "uses")
+rep_uses = CheckReport(); _scan_sources(rep_uses, Package.load(uses))
+assert len(rep_uses.blocking) == 2, rep_uses.render()
+print("stale-wording: definitions skipped, uses still caught")
 print("VERSIONING OK")

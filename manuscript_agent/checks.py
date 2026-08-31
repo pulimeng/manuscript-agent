@@ -12,6 +12,11 @@ from dataclasses import dataclass, field
 from typing import List, Optional
 
 COMMENT_TAIL = re.compile(r"(?<!\\)%.*$")
+# `\newcommand{\todo}[1]{...}` defines a marker macro; it is not an unresolved marker
+DEFINITION = re.compile(
+    r"\\(?:re|provide)?newcommand\b|\\def\b|\\DeclareRobustCommand\b"
+    r"|\\newenvironment\b|\\newif\b|\\newtoggle\b"
+)
 STALE_MARKERS = re.compile(
     r"(\[?\bTODO\b[^\]\n]*\]?|\bTBD\b|\bFIXME\b|\bXXX\b|\bplaceholder\b|lorem ipsum"
     r"|\\todo\{[^}]*\}|\?\?\?)",
@@ -182,7 +187,7 @@ def _scan_sources(report: CheckReport, package) -> None:
         rel = package.rel(src)
         body = src.read_text(errors="replace")
         for line_no, line in enumerate(body.splitlines(), 1):
-            if line.lstrip().startswith("%"):
+            if line.lstrip().startswith("%") or DEFINITION.search(line):
                 continue
             marker = STALE_MARKERS.search(line)
             if marker:
