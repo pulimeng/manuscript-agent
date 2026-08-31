@@ -333,8 +333,20 @@ class Package:
 # -- helpers --------------------------------------------------------------
 
 
+def _visible(root: Path, pattern: str) -> List[Path]:
+    """Files matching `pattern`, ignoring dot-directories.
+
+    Frozen versions live under `.manuscript-agent/versions/`, and each is a complete copy of
+    the package — including its own main.tex. Without this, discovery finds them.
+    """
+    return sorted(
+        p for p in root.rglob(pattern)
+        if not any(part.startswith(".") for part in p.relative_to(root).parts)
+    )
+
+
 def _find_main(root: Path) -> Path:
-    tex = sorted(root.rglob("*.tex"))
+    tex = _visible(root, "*.tex")
     with_class = [p for p in tex if DOCUMENTCLASS.search(p.read_text(errors="replace"))]
     if len(with_class) == 1:
         return with_class[0]
@@ -349,7 +361,7 @@ def _find_main(root: Path) -> Path:
     for name in ("main.md", "paper.md", "manuscript.md"):
         if (root / name).exists():
             return root / name
-    md = sorted(root.glob("*.md"))
+    md = _visible(root, "*.md")
     if len(md) == 1:
         return md[0]
     raise PackageError(f"no main manuscript file found in {root}")

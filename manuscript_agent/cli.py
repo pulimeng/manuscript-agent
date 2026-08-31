@@ -17,7 +17,7 @@ from .build import BuildError, available as tex_available, compile_pdf
 from .checks import run_checks
 from .history import SubmissionHistory
 from .patches import tree_patch
-from .versions import VersionStore
+from .versions import DIGEST_ALGO, VersionStore
 from .llm import Attachment, RefusalError, TruncatedError
 from .package import Package, PackageError, PdfSubmission
 from .pipeline import (
@@ -219,9 +219,17 @@ def cmd_review(args) -> int:
         if prior_root.exists():
             changes = tree_patch(prior_root, version.root, history.last.vid,
                                  history.last.source_hash).text
+            lines = len(changes.splitlines())
             _log(f"Continuing round {history.next_number()}: "
                  f"{history.last.vid} -> {version.vid}, "
-                 f"{len(changes.splitlines())} diff lines since your last submission")
+                 f"{lines} diff lines since your last submission")
+            if not lines:
+                _log("  the sources are unchanged since the last round — the reviewers will "
+                     "be re-reading the same paper")
+            stale = getattr(history.last, "digest_algo", 1) != DIGEST_ALGO
+            if stale:
+                _log(f"  ({history.last.vid} was hashed under an older digest definition; "
+                     "comparison above is by file contents, not by hash)")
         if not letter:
             _log("  (no --letter given; reviewers will judge the diff on its own)")
 

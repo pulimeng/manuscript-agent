@@ -18,6 +18,11 @@ from typing import List, Optional
 from .build import BUILD_DIR, available as tex_available, compile_pdf
 from .package import Package
 
+# Bumped whenever the *definition* of the digest changes — which files it covers, or how.
+# A hash is only an identity if you know what it was taken over; without this, a version
+# frozen by an older build silently compares unequal to identical sources.
+DIGEST_ALGO = 2
+
 PAGES = re.compile(r"Output written on .*?\((\d+) pages?", re.IGNORECASE)
 NOISE = {".git", ".venv", "__pycache__", ".DS_Store", BUILD_DIR}
 
@@ -50,6 +55,8 @@ class Version:
     main: Path
     source_hash: str
     created_at: str
+    digest_algo: int = DIGEST_ALGO
+    digest_files: List[str] = field(default_factory=list)
     pdf: Optional[Path] = None
     pdf_hash: Optional[str] = None
     pages: Optional[int] = None
@@ -78,9 +85,17 @@ class Version:
         return "\n".join(lines)
 
 
+def digest_inputs(pkg: Package) -> List[str]:
+    """Exactly which files the digest covers, in order. Stored, so it stays checkable."""
+    return [pkg.rel(p) for p in sorted(pkg.sources, key=lambda x: pkg.rel(x))] + [
+        pkg.rel(p) for p in sorted(pkg.bib_files, key=lambda x: pkg.rel(x))
+    ]
+
+
 def source_digest(pkg: Package) -> str:
     """Hash over every source file, path included, so a rename is a change."""
     h = hashlib.sha256()
+    h.update(f"algo={DIGEST_ALGO}\0".encode())
     for src in sorted(pkg.sources, key=lambda p: pkg.rel(p)):
         h.update(pkg.rel(src).encode())
         h.update(b"\0")
@@ -123,6 +138,7 @@ class VersionStore:
             main=frozen_main,
             source_hash=source_digest(pkg),
             created_at=datetime.now().isoformat(timespec="seconds"),
+            digest_files=digest_inputs(pkg),
         )
 
         if self.compile_pdfs and frozen_main.suffix.lower() == ".tex" and tex_available():
@@ -152,6 +168,7 @@ class VersionStore:
             main=main,
             source_hash=source_digest(pkg),
             created_at=datetime.now().isoformat(timespec="seconds"),
+            digest_files=digest_inputs(pkg),
         )
         if self.compile_pdfs and main.suffix.lower() == ".tex" and tex_available():
             version.build_attempted = True

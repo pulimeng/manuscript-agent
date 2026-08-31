@@ -76,4 +76,39 @@ assert second.prior_points[0].verdict == "resolved" and second.overall == 7
 table = (ROOT / ".manuscript-agent/summary.md").read_text()
 assert "| 1 |" in table and "| 2 |" in table and "4/10" in table and "7/10" in table
 print("history table:\n" + table.strip())
+
+# --- history written under an older schema still opens -------------------
+import json
+from manuscript_agent.history import HistoryError
+
+legacy = ROOT / "legacy" / ".manuscript-agent"
+legacy.mkdir(parents=True)
+(legacy / "state.json").write_text(json.dumps({"rounds": [{
+    "number": 1, "vid": "v1", "source_hash": "abc", "pdf_hash": "def", "pages": 19,
+    "decision": "major_revision", "created_at": "2026-08-30T10:00:00", "letter": "",
+    "reviews": [{"reviewer_id": "R1", "persona": "the methodologist", "review": {
+        "version_reviewed": "v1", "summary": "s",
+        "points": [{"label": "W1", "kind": "weakness", "version": "v1", "section": "§3",
+                    "page": 4, "comment": "c", "severity": "blocking",
+                    "artifact_status": "not_applicable"},
+                   {"label": "W2", "kind": "weakness", "version": "v1", "section": "§4",
+                    "page": 5, "comment": "c2", "severity": "minor",
+                    "artifact_status": "not_applicable"}],
+        "soundness": 3, "novelty": 3, "clarity": 3, "overall": 4, "confidence": 4,
+        "recommendation": "major_revision"}}]}]}))
+
+old = SubmissionHistory.load(legacy)
+assert len(old.rounds) == 1 and old.rounds[0].digest_algo == 1, "old digest must be marked"
+pts = old.rounds[0].reviews[0].review.points
+assert [p.ask for p in pts] == ["fatal", "clarification"], [p.ask for p in pts]
+assert all(p.verification == "inferred" for p in pts), "backfilled fields must not claim proof"
+assert old.rounds[0].reviews[0].review.decision_critical == []
+print("legacy history migrated: severity -> ask, backfills marked inferred")
+
+(legacy / "state.json").write_text("{ not json")
+try:
+    SubmissionHistory.load(legacy); raise SystemExit("a corrupt history must not be silent")
+except HistoryError as e:
+    assert "--fresh" in str(e)
+print("corrupt history reports how to recover")
 print("MANUAL ROUNDS OK")
