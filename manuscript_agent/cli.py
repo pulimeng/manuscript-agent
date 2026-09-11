@@ -44,6 +44,28 @@ def _log(msg: str) -> None:
     print(msg, flush=True)
 
 
+def load_dotenv(paths=(".env",)) -> List[str]:
+    """Read KEY=VALUE lines from a .env into the environment, without overriding anything
+    already set. No dependency, no interpolation; quotes around the value are stripped."""
+    loaded: List[str] = []
+    for candidate in paths:
+        path = Path(candidate).expanduser()
+        if not path.is_file():
+            continue
+        for raw in path.read_text().splitlines():
+            line = raw.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            if line.startswith("export "):
+                line = line[len("export "):]
+            key, _, value = line.partition("=")
+            key, value = key.strip(), value.strip().strip("'\"")
+            if key and key not in os.environ:
+                os.environ[key] = value
+                loaded.append(key)
+    return loaded
+
+
 # -- configuration ----------------------------------------------------------
 
 
@@ -427,6 +449,11 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv=None) -> int:
+    # .env in the working directory, then in the project, then ~/.manuscript-agent.env
+    loaded = load_dotenv((".env", Path(__file__).resolve().parents[1] / ".env",
+                          "~/.manuscript-agent.env"))
+    if loaded:
+        _log(f"Loaded from .env: {', '.join(loaded)}")
     args = build_parser().parse_args(argv)
     try:
         return args.func(args)

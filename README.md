@@ -37,11 +37,24 @@ conda create -n manuscript-agent python=3.11 -y
 conda activate manuscript-agent
 pip install -e .
 
-export ANTHROPIC_API_KEY=sk-ant-...
-export OPENAI_API_KEY=sk-...            # optional
-
+cp .env.example .env                    # then fill in your keys
 python tests/test_manual_rounds.py      # check the install; no API key needed
 ```
+
+### Keys
+
+Keys are read from the environment; nothing in the tool takes a key as an argument or writes
+one to disk. Three ways to set them, in the order they win:
+
+1. **Your shell** — `export ANTHROPIC_API_KEY=...` (put it in `~/.zshrc` to keep it).
+2. **A `.env` file** — `KEY=VALUE` lines, loaded at startup from the directory you run in,
+   then the project root, then `~/.manuscript-agent.env`. Never overrides a value already in
+   your shell. `.env` is gitignored; `.env.example` is the template.
+3. **An `ant auth login` profile** — the Anthropic SDK finds it on its own when neither of the
+   above sets `ANTHROPIC_API_KEY`.
+
+`OPENAI_API_KEY` is optional: without it, the panel is drawn from the Claude models in
+`MODEL_POOL` only.
 
 ## How a round works
 
