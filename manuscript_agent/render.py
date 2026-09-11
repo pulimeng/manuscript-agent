@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Iterable
 
-from .schemas import MetaReview, RevisionPlan, ScoredReview
+from .schemas import MetaReview, ScoredReview
 
 
 def review_md(sr: ScoredReview) -> str:
@@ -95,16 +95,3 @@ def meta_md(m: MetaReview) -> str:
     lines += [f"- {s}" for s in m.guidance_to_authors] or ["- (none)"]
     lines += ["", "**Rationale**", "", m.rationale, ""]
     return "\n".join(lines)
-
-
-def plan_md(p: RevisionPlan) -> str:
-    lines = ["### Revision plan", "", p.strategy, ""]
-    for i, item in enumerate(p.items, 1):
-        refs = ", ".join(item.refs) or "—"
-        ci = ", ".join(f"CI{n}" for n in item.critical_issues)
-        tag = f"{refs}; {ci}" if ci else refs
-        lines.append(f"{i}. [{item.stance}] ({item.section}; addresses {tag}) {item.action}")
-    if p.out_of_scope:
-        lines += ["", "**Out of scope for this revision**", ""]
-        lines += [f"- {s}" for s in p.out_of_scope]
-    return "\n".join(lines) + "\n"

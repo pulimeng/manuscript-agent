@@ -8,7 +8,6 @@ os.environ.setdefault("OPENAI_API_KEY", "test-key")
 import anthropic, openai
 from manuscript_agent.config import RunConfig, VENUES
 from manuscript_agent.providers import ModelSpec, OpenAILLM, build, cycle
-from manuscript_agent.pipeline import SubmissionPipeline
 from manuscript_agent.schemas import Review
 
 # --- spec parsing --------------------------------------------------------
@@ -36,53 +35,45 @@ for call in (lambda: oai.text("s", "p", max_tokens=500),
         pass
 print("openai text() + parse() requests build; effort mapped")
 
-# --- panel routing -------------------------------------------------------
-cfg = RunConfig(
-    venue=VENUES["cs-conference"], reviewer_count=3,
-    author_model=ModelSpec.parse("claude-opus-5"),
-    editor_model=ModelSpec.parse("openai:gpt-5.1"),
-    reviewer_models=[ModelSpec.parse("openai:gpt-5.1"), ModelSpec.parse("claude-opus-5")],
-)
-pipe = SubmissionPipeline(cfg)
-assert pipe.author.llm.label == "claude:claude-opus-5"
-assert pipe.editor.llm.label == "openai:gpt-5.1"
-labels = [r.llm.label for r in pipe.reviewers]
-assert labels == ["openai:gpt-5.1", "claude:claude-opus-5", "openai:gpt-5.1"], labels
-assert isinstance(pipe.author.llm.client, anthropic.Anthropic)
-assert isinstance(pipe.editor.llm.client, openai.OpenAI)
-print("panel routing ok:", labels)
+# --- casting: random from the pool, reproducible, and pins win ----------
+from manuscript_agent.config import MODEL_POOL
 
-# a single shared llm still overrides every role (what the other tests rely on)
-class Stub: pass
-shared = SubmissionPipeline(cfg, llm=Stub())
-assert shared.author.llm is shared.editor.llm is shared.reviewers[0].llm
-print("shared-llm override ok")
+cfg = RunConfig(venue=VENUES["cs-conference"], reviewer_count=3, adversarial=True)
+assert not cfg.cast_complete
+cfg.cast(seed=11)
+assert cfg.cast_complete and len(cfg.reviewer_models) == 4
+assert all(str(m) in MODEL_POOL for m in cfg.reviewer_models + [cfg.editor_model])
+again = RunConfig(venue=VENUES["cs-conference"], reviewer_count=3, adversarial=True).cast(seed=11)
+assert again.casting() == cfg.casting(), "the same seed must reproduce the draw"
+other = RunConfig(venue=VENUES["cs-conference"], reviewer_count=3, adversarial=True).cast(seed=12)
+print("cast:", cfg.casting()["editor"], "|", list(cfg.casting()["reviewers"].values()))
+print("reproducible with a seed; a different seed differs:", other.casting() != cfg.casting())
 
-# default casting: OpenAI author, Claude reviewers and editor
-d = RunConfig(venue=VENUES["workshop"])
-assert str(d.author_model) == "openai:gpt-5.5", d.author_model
-assert str(d.editor_model) == "claude:claude-opus-5", d.editor_model
-assert [str(x) for x in d.reviewer_models] == ["claude:claude-opus-5"] * 3
-print("default casting:", d.author_model, "author /", d.editor_model, "editor+panel")
+# the pool is used without replacement while it lasts, so a 4-seat panel over a 4-model
+# pool is four different models
+assert len({str(m) for m in cfg.reviewer_models}) == min(4, len(MODEL_POOL))
+print("reviewers drawn without replacement")
 
-# --model casts one model everywhere
-one = RunConfig(venue=VENUES["workshop"], model="claude-opus-5")
-assert str(one.author_model) == "claude:claude-opus-5"
-assert [str(x) for x in one.reviewer_models] == ["claude:claude-opus-5"] * 3
-print("--model override ok")
+# a restricted pool (no OpenAI key) never draws an OpenAI model
+claude_only = [m for m in MODEL_POOL if m.startswith("claude:")]
+c2 = RunConfig(venue=VENUES["workshop"], reviewer_count=3).cast(pool=claude_only, seed=1)
+assert all(m.provider == "claude" for m in c2.reviewer_models + [c2.editor_model])
+print("restricted pool respected")
 
-# an explicit role wins over both the override and the default
-mixed = RunConfig(venue=VENUES["workshop"], model="claude-opus-5",
-                  author_model=ModelSpec.parse("openai:gpt-5.4"))
-assert str(mixed.author_model) == "openai:gpt-5.4"
-assert str(mixed.editor_model) == "claude:claude-opus-5"
-print("explicit role beats override ok")
+# pins beat the draw, and --model pins every role
+pinned = RunConfig(venue=VENUES["workshop"], reviewer_count=3,
+                   editor_model=ModelSpec.parse("openai:gpt-5.4"),
+                   reviewer_models=[ModelSpec.parse("claude-opus-5")])
+assert pinned.cast_complete and str(pinned.editor_model) == "openai:gpt-5.4"
+assert [str(m) for m in pinned.reviewer_models] == ["claude:claude-opus-5"] * 3
+one = RunConfig(venue=VENUES["workshop"], model="claude-sonnet-5")
+assert one.cast_complete and {str(m) for m in one.reviewer_models + [one.editor_model]} \
+    == {"claude:claude-sonnet-5"}
+print("pinned roles and --model override the draw")
 
-# the SDK passes unknown model strings through rather than validating them
-probe = OpenAILLM(model="gpt-5.5", client=openai.OpenAI(
-    api_key="t", base_url="http://127.0.0.1:9", max_retries=0))
-try:
-    probe.text("s", "p", max_tokens=50); raise SystemExit("expected a connection error")
-except openai.APIConnectionError:
-    print("gpt-5.5 accepted client-side (no local model-name validation)")
+# each spec builds the right client
+import anthropic
+c = build(ModelSpec.parse("claude-opus-5")); assert isinstance(c.client, anthropic.Anthropic)
+o = build(ModelSpec.parse("openai:gpt-5.4")); assert isinstance(o.client, openai.OpenAI)
+print("build() routes each spec to its provider")
 print("PROVIDERS OK")

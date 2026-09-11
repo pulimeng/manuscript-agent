@@ -1,8 +1,7 @@
-"""Revisions as patches.
+"""Diffs between manuscript versions.
 
-A revision is proposed as a unified diff against a named version, never written straight into
-the manuscript. The patch is a plain `git apply`-compatible file, so it can be read, reviewed
-by a person, applied to the real project, or thrown away.
+Round 2's reviewers are shown exactly what changed since the version they reviewed, as a
+plain `git apply`-compatible unified diff.
 """
 
 from __future__ import annotations
@@ -11,9 +10,9 @@ import difflib
 import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List, Optional, Set
+from typing import List, Set
 
-from .package import Package, WRITABLE_SUFFIXES
+from .package import SOURCE_SUFFIXES
 
 
 @dataclass
@@ -52,13 +51,6 @@ class Patch:
         )
         return proc.returncode == 0
 
-    def apply_to(self, root: Path) -> None:
-        proc = subprocess.run(
-            ["git", "apply", "-p1", "-"],
-            input=self.text, text=True, errors="replace", cwd=root, capture_output=True,
-        )
-        if proc.returncode != 0:
-            raise RuntimeError(f"patch did not apply: {proc.stderr.strip()}")
 
 
 def _text_files(root: Path) -> Set[str]:
@@ -66,7 +58,7 @@ def _text_files(root: Path) -> Set[str]:
         str(p.relative_to(root))
         for p in root.rglob("*")
         if p.is_file()
-        and p.suffix.lower() in WRITABLE_SUFFIXES
+        and p.suffix.lower() in SOURCE_SUFFIXES
         and not any(part.startswith(".") for part in p.relative_to(root).parts)
     }
 
@@ -112,29 +104,3 @@ def tree_patch(base: Path, candidate: Path, base_vid: str, base_hash: str) -> Pa
         removed += sum(1 for ln in body if ln.startswith("-") and not ln.startswith("---"))
 
     return Patch(base_vid, base_hash, "".join(chunks), changed, added, removed)
-
-
-def overlay(root: Path, main_rel: str, blocks: Dict[str, str]) -> Path:
-    """Lay proposed file bodies over an existing tree, with the same path guards."""
-    pkg = Package.load(root, root / main_rel)
-    for rel, body in blocks.items():
-        target = pkg._safe_path(rel)
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(body)
-    return root
-
-
-def materialise(base: Path, main_rel: str, blocks: Dict[str, str], into: Path) -> Path:
-    """Copy `base` to `into` and lay the author's proposed file bodies over it.
-
-    The candidate tree is where a proposal is assembled and checked. It is never the
-    manuscript: promotion is what turns a candidate into the next version.
-    """
-    import shutil
-
-    if base.resolve() == into.resolve():
-        return overlay(into, main_rel, blocks)
-    if into.exists():
-        shutil.rmtree(into)
-    shutil.copytree(base, into, ignore=shutil.ignore_patterns(".git", "__pycache__"))
-    return overlay(into, main_rel, blocks)

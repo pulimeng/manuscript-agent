@@ -1,30 +1,31 @@
-"""Agentic manuscript writing, submission, peer review and revision."""
+"""Agentic peer review: reviewers and an editor read your compiled manuscript; you revise."""
 
-from .config import VENUES, Persona, RunConfig, Venue
 from .build import BuildResult, compile_pdf
-from .integrity import IntegrityReport, Violation
-from .integrity import check as check_integrity
+from .config import MODEL_POOL, VENUES, Persona, RunConfig, Venue
+from .history import SubmissionHistory
 from .llm import LLM, Attachment
 from .manuscript import Manuscript
-from .pipeline import RunResult, SubmissionPipeline
+from .package import Package, PdfSubmission
 from .providers import ModelSpec, OpenAILLM
+from .versions import Version, VersionStore
 
 __all__ = [
-    "VENUES",
     "Attachment",
     "BuildResult",
-    "IntegrityReport",
-    "compile_pdf",
     "LLM",
+    "MODEL_POOL",
+    "Manuscript",
     "ModelSpec",
     "OpenAILLM",
-    "Violation",
-    "check_integrity",
-    "Manuscript",
+    "Package",
+    "PdfSubmission",
     "Persona",
     "RunConfig",
-    "RunResult",
-    "SubmissionPipeline",
+    "SubmissionHistory",
+    "VENUES",
     "Venue",
+    "Version",
+    "VersionStore",
+    "compile_pdf",
 ]
-__version__ = "0.3.0"
+__version__ = "0.4.0"

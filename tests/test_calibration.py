@@ -6,7 +6,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from manuscript_agent.agents.editor import EditorAgent
 from manuscript_agent.agents.reviewer import ReviewerAgent
 from manuscript_agent.config import VENUES, personas
-from manuscript_agent.pipeline import overweighted_reviews, panel_correlation
+from manuscript_agent.panel import overweighted_reviews, panel_correlation
 from manuscript_agent.providers import ModelSpec as M
 from manuscript_agent.render import review_md
 from manuscript_agent.schemas import Review, ReviewPoint, ScoredReview

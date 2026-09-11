@@ -1,12 +1,8 @@
 """A submission package: a main file plus the sections, bibliography and figures it needs.
 
-Real manuscripts are not one file. This resolves `\\input`/`\\include` into a single view for
-the reviewers to read, inventories the assets they cannot read (figures, data), and applies
-the author's revision back into the individual files it came from.
-
-The author emits only the files it changed, each wrapped in a FILE marker. Everything else is
-therefore untouched byte-for-byte as a property of the mechanism rather than as an instruction
-the model is asked to follow.
+Real manuscripts are not one file. This resolves `\\input`/`\\include` into a single view of
+the sources, inventories the assets (figures, data), and reads the bibliography so citations
+can be checked. Nothing here writes into the package: revision is the author's job.
 """
 
 from __future__ import annotations
@@ -19,12 +15,11 @@ from typing import Dict, List, Optional, Set
 
 from .build import BUILD_DIR
 from .llm import Attachment
-from .manuscript import diff, strip_fence
+from .manuscript import strip_fence
 
 TEXT_SUFFIXES = {".tex", ".md", ".markdown", ".txt", ".rst", ".cls", ".sty"}
-# what the author is allowed to rewrite. The bibliography is a source file: answering
-# "engage with prior work X" means adding an entry as well as a \cite.
-WRITABLE_SUFFIXES = TEXT_SUFFIXES | {".bib"}
+# everything that counts as a source when diffing one version against the next
+SOURCE_SUFFIXES = TEXT_SUFFIXES | {".bib"}
 ASSET_SUFFIXES = {".pdf", ".png", ".jpg", ".jpeg", ".eps", ".svg", ".gif", ".tif", ".tiff",
                   ".csv", ".tsv", ".xlsx", ".json"}
 
@@ -44,25 +39,6 @@ DATA_SUFFIXES = {".csv", ".tsv", ".json", ".jsonl", ".parquet", ".zip", ".tar", 
                  ".npz", ".h5", ".xlsx"}
 DOCUMENTCLASS = re.compile(r"^\s*\\documentclass", re.MULTILINE)
 COMMENT = re.compile(r"(?<!\\)%.*$", re.MULTILINE)
-
-FILE_BLOCK = re.compile(
-    r"%%%\s*FILE:\s*(?P<path>[^\n%]+?)\s*%%%\r?\n(?P<body>.*?)\r?\n?%%%\s*END FILE:[^\n]*%%%",
-    re.DOTALL,
-)
-
-EMIT_INSTRUCTIONS = """Emit only the files you changed. Wrap each one exactly like this, with
-the path as it appears in the manifest:
-
-%%% FILE: sections/results.tex %%%
-<the complete new contents of that file>
-%%% END FILE: sections/results.tex %%%
-
-Emit the whole file inside the markers, not a fragment or a diff — the block replaces the
-file. Do not emit a file you did not change; unchanged files are preserved automatically.
-You may create a new file by naming a path that does not exist yet, inside the package. You
-cannot create figures or data files: if a revision needs one that does not exist, say so in
-the text and leave it out. Output nothing outside the FILE blocks."""
-
 
 class PackageError(RuntimeError):
     """The author's output could not be applied to the package."""
@@ -139,10 +115,6 @@ class Package:
     @property
     def fmt(self) -> str:
         return "LaTeX" if self.main.suffix.lower() == ".tex" else "Markdown"
-
-    @property
-    def emit_instructions(self) -> str:
-        return EMIT_INSTRUCTIONS
 
     @property
     def known_citations(self) -> Set[str]:
@@ -235,74 +207,6 @@ class Package:
             parts.append(f"%%% END FILE: {rel} %%%")
             parts.append("")
         return "\n".join(parts)
-
-    # -- applying a revision ----------------------------------------------
-
-    def proposed_blocks(self, emitted: str) -> Dict[str, str]:
-        """Parse the author's output into {relative path: new body} without writing it."""
-        blocks: Dict[str, str] = {}
-        for m in FILE_BLOCK.finditer(strip_fence(emitted)):
-            blocks[m.group("path").strip()] = m.group("body").rstrip("\n") + "\n"
-        if not blocks:
-            raise PackageError(
-                "the author emitted no FILE blocks; there is nothing to propose"
-            )
-        for rel in blocks:
-            self._safe_path(rel)  # validate every path up front
-        return blocks
-
-    def replace(self, emitted: str) -> str:
-        """Write back each FILE block, all or nothing.
-
-        Every path is validated before anything is written, and a failure part-way through
-        rolls the package back — a half-applied revision is worse than none, because the
-        next round would review a document the author never intended.
-        """
-        blocks = list(FILE_BLOCK.finditer(strip_fence(emitted)))
-        if not blocks:
-            raise PackageError(
-                "the author emitted no FILE blocks; nothing was written to the package"
-            )
-
-        planned = []
-        for m in blocks:
-            rel = m.group("path").strip()
-            planned.append((rel, self._safe_path(rel), m.group("body").rstrip("\n") + "\n"))
-
-        backup = {
-            target: (target.read_text(errors="replace") if target.exists() else None)
-            for _, target, _ in planned
-        }
-        diffs: List[str] = []
-        try:
-            for rel, target, body in planned:
-                old = backup[target] or ""
-                if old == body:
-                    continue
-                target.parent.mkdir(parents=True, exist_ok=True)
-                target.write_text(body)
-                diffs.append(diff(old, body, rel))
-        except Exception:
-            for target, original in backup.items():
-                if original is None:
-                    target.unlink(missing_ok=True)
-                else:
-                    target.write_text(original)
-            raise
-
-        self._discover()  # a new \input or figure reference changes the package
-        return "".join(diffs)
-
-    def _safe_path(self, rel: str) -> Path:
-        candidate = (self.root / rel).resolve()
-        if self.root not in candidate.parents and candidate != self.root:
-            raise PackageError(f"refusing to write outside the package: {rel}")
-        if candidate.suffix.lower() not in WRITABLE_SUFFIXES:
-            raise PackageError(
-                f"refusing to write a non-source file: {rel} "
-                f"(writable: {', '.join(sorted(WRITABLE_SUFFIXES))})"
-            )
-        return candidate
 
     def save(self) -> None:
         """Files are written by `replace`; kept for interface parity with Manuscript."""
@@ -488,43 +392,14 @@ class PdfSubmission:
         return set()
 
     def artifacts(self) -> List[str]:
-        """Code, data and repository links the manuscript actually ships or points to.
-
-        Reviewers see only the PDF, so without this they cannot tell 'the authors released
-        nothing' from 'I cannot open it from here'.
-        """
-        found: List[str] = []
-        for src in self.sources:
-            for url in ARTIFACT_URL.findall(src.read_text(errors="replace")):
-                entry = f"link: {url.rstrip('.')}"
-                if entry not in found:
-                    found.append(entry)
-        for path in sorted(self.root.rglob("*")):
-            if not path.is_file() or any(x.startswith(".") for x in path.parts):
-                continue
-            suffix = path.suffix.lower()
-            if suffix in CODE_SUFFIXES:
-                found.append(f"code in package: {self.rel(path)}")
-            elif suffix in DATA_SUFFIXES:
-                found.append(f"data in package: {self.rel(path)}")
-        return found
+        """A bare PDF ships nothing the reviewers can be pointed at."""
+        return []
 
     def artifact_manifest(self) -> str:
-        items = self.artifacts()
-        if not items:
-            return (
-                "No code, data or repository link is visible in the review package or named "
-                "in the text you were given. That is a fact about this package, not about "
-                "what the authors hold: artifacts are often submitted through a separate "
-                "channel, withheld for anonymity, or promised on acceptance. If the "
-                "manuscript states an availability plan, judge that statement. Do not assert "
-                "that the authors have no artifact."
-            )
         return (
-            "The submission ships or names the following artifacts. You are reading the PDF "
-            "only, so you cannot open them from here — that is a limit of your access, not a "
-            "failure by the authors:\n"
-            + "\n".join(f"  - {i}" for i in items)
+            "You were given a PDF and nothing else. Whether the authors provide code or "
+            "data is whatever the manuscript itself states; do not assert that they have "
+            "no artifact because none accompanies this file."
         )
 
     def missing_assets(self) -> List[str]:
@@ -532,29 +407,6 @@ class PdfSubmission:
 
     def attachment(self) -> Attachment:
         return Attachment.from_path(self.path)
-
-    @property
-    def emit_instructions(self) -> str:
-        raise PackageError(self._no_sources())
-
-    def proposed_blocks(self, emitted: str) -> Dict[str, str]:
-        """Parse the author's output into {relative path: new body} without writing it."""
-        blocks: Dict[str, str] = {}
-        for m in FILE_BLOCK.finditer(strip_fence(emitted)):
-            blocks[m.group("path").strip()] = m.group("body").rstrip("\n") + "\n"
-        if not blocks:
-            raise PackageError(
-                "the author emitted no FILE blocks; there is nothing to propose"
-            )
-        for rel in blocks:
-            self._safe_path(rel)  # validate every path up front
-        return blocks
-
-    def proposed_blocks(self, emitted: str) -> dict:
-        raise PackageError(self._no_sources())
-
-    def replace(self, emitted: str) -> str:
-        raise PackageError(self._no_sources())
 
     def save(self) -> None:
         pass
@@ -565,9 +417,3 @@ class PdfSubmission:
         shutil.copyfile(self.path, out)
         return out
 
-    def _no_sources(self) -> str:
-        return (
-            f"{self.path.name} is a PDF with no sources, so it cannot be revised. "
-            "Review it with `manuscript-agent review`, or point `submit` at the directory "
-            "holding its .tex sources."
-        )

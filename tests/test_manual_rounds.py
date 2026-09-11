@@ -138,4 +138,44 @@ assert len(restarted.rounds) == 1 and restarted.rounds[0].vid == "v1", restarted
 assert not restarted.rounds[0].reviews[0].review.prior_points, \
     "a fresh start must not carry prior points"
 print("--fresh archived the old history and restarted at v1")
+
+# --- the panel is drawn at round 1 and kept for every later round --------
+import json as _json
+from manuscript_agent import config as _config
+
+CAST = ROOT / "cast"; shutil.rmtree(CAST, ignore_errors=True); CAST.mkdir(parents=True)
+(CAST / "main.md").write_text("# Paper\n\nv1 text.\n")
+CASTH = Path("runs") / "cast"; shutil.rmtree(CASTH, ignore_errors=True)
+cast_args = ["review", str(CAST), "--no-compile", "--reviewers", "3", "--adversarial",
+             "--seed", "5"]
+
+# round 1: a random draw from the pool, recorded
+assert cli.main(cast_args) == 0
+state = _json.loads((CASTH / "state.json").read_text())
+c1 = state["casting"]
+assert set(c1["reviewers"]) == {"R1", "R2", "R3", "R4"} and c1["editor"], c1
+assert c1["reviewer_count"] == 3 and c1["adversarial"] is True
+assert all(v in _config.MODEL_POOL for v in list(c1["reviewers"].values()) + [c1["editor"]])
+print("round 1 drew:", c1["editor"], "|", list(c1["reviewers"].values()))
+
+# round 2: the same panel returns, even when the flags would draw a different one
+(CAST / "main.md").write_text("# Paper\n\nv2 text.\n")
+assert cli.main(["review", str(CAST), "--no-compile", "--reviewers", "2", "--seed", "99",
+                 "--model", "claude-sonnet-5"]) == 0
+c2 = _json.loads((CASTH / "state.json").read_text())["casting"]
+assert c2 == c1, "round 2 must keep round 1's panel regardless of flags"
+hist = SubmissionHistory.load(CASTH)
+assert len(hist.rounds) == 2
+assert {r.reviewer_id for r in hist.rounds[1].reviews} == {"R1", "R2", "R3", "R4"}, \
+    "the panel size is part of the casting, so --reviewers 2 must not shrink it"
+print("round 2 kept the same panel; flags ignored")
+
+# --recast draws again; --fresh starts a new manuscript history with a new draw
+assert cli.main(cast_args + ["--recast", "--seed", "6"]) == 0
+c3 = _json.loads((CASTH / "state.json").read_text())["casting"]
+assert "seed 6" in c3["how"] and "seed 5" in c1["how"], "--recast must record a new draw"
+assert cli.main(cast_args + ["--fresh", "--seed", "6"]) == 0
+c4 = _json.loads((CASTH / "state.json").read_text())["casting"]
+assert len(SubmissionHistory.load(CASTH).rounds) == 1, "--fresh restarts at round 1"
+print("--recast redraws; --fresh restarts with a new panel")
 print("MANUAL ROUNDS OK")

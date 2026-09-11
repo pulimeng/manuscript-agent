@@ -52,10 +52,6 @@ class Manuscript:
         return self.path
 
     @property
-    def emit_instructions(self) -> str:
-        return f"Emit the complete revised {self.fmt} file and nothing else."
-
-    @property
     def known_citations(self) -> set:
         return set()
 
@@ -70,16 +66,6 @@ class Manuscript:
         out = directory / f"{label}{self.path.suffix}"
         out.write_text(self.text)
         return out
-
-    def proposed_blocks(self, emitted: str) -> dict:
-        """A one-file manuscript emits the whole file, so the proposal is that one file."""
-        return {self.path.name: strip_fence(emitted)}
-
-    def replace(self, new_text: str) -> str:
-        """Swap in a new full text, returning a unified diff against the old one."""
-        old = self.text
-        self.text = strip_fence(new_text)
-        return diff(old, self.text, self.path.name)
 
 
 def strip_fence(text: str) -> str:

@@ -104,30 +104,40 @@ class Round:
 
 @dataclass
 class SubmissionHistory:
-    """Everything that has happened to one manuscript, round by round."""
+    """Everything that has happened to one manuscript, round by round.
+
+    `casting` is who reviewed it: drawn once at round 1 and kept for every round after, so
+    a resubmission goes back to the same reviewers and the same editor.
+    """
 
     directory: Path
     rounds: List[Round] = field(default_factory=list)
+    casting: Optional[dict] = None
 
     @staticmethod
     def load(directory: str | Path) -> "SubmissionHistory":
         directory = Path(directory)
         directory.mkdir(parents=True, exist_ok=True)
         state = directory / STATE
-        rounds = []
+        rounds, casting = [], None
         if state.exists():
             try:
-                rounds = [Round.from_json(r) for r in json.loads(state.read_text())["rounds"]]
+                data = json.loads(state.read_text())
+                rounds = [Round.from_json(r) for r in data["rounds"]]
+                casting = data.get("casting")
             except Exception as exc:  # a corrupt or unmigratable record
                 raise HistoryError(
                     f"{state} could not be read ({exc.__class__.__name__}). Move it aside, "
                     "or re-run with --fresh to start a new history at v1."
                 ) from exc
-        return SubmissionHistory(directory, rounds)
+        return SubmissionHistory(directory, rounds, casting)
 
     def save(self) -> None:
         (self.directory / STATE).write_text(
-            json.dumps({"rounds": [r.to_json() for r in self.rounds]}, indent=2)
+            json.dumps(
+                {"casting": self.casting, "rounds": [r.to_json() for r in self.rounds]},
+                indent=2,
+            )
         )
 
     # -- what the next round needs to know -------------------------------

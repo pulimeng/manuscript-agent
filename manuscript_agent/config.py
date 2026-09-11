@@ -50,12 +50,16 @@ class Persona:
     expertise: str = "expert in the paper's subfield"
 
 
-# Default casting. The author drafts and rewrites prose; the reviewers and the editor
-# judge evidence, and are deliberately kept on a different provider from the author so the
-# work is not assessed by the model that produced it.
-DEFAULT_AUTHOR_MODEL = "openai:gpt-5.5"
-DEFAULT_REVIEWER_MODEL = "claude:claude-opus-5"
-DEFAULT_EDITOR_MODEL = "claude:claude-opus-5"
+# Models a panel may be drawn from. Round 1 of a manuscript draws its editor and reviewers
+# at random from here (restricted to the providers you hold a key for), and every later
+# round of that manuscript keeps the same casting, so the reviewers who return are the ones
+# who reviewed before. A new manuscript draws again. Edit freely; entries are provider:model.
+MODEL_POOL = [
+    "claude:claude-opus-5",
+    "claude:claude-sonnet-5",
+    "openai:gpt-5.4",
+    "openai:gpt-5.2",
+]
 
 
 VENUES: dict[str, Venue] = {
@@ -193,40 +197,58 @@ def personas(count: int, adversarial: bool = False) -> List[Persona]:
 @dataclass
 class RunConfig:
     venue: Venue
-    rounds: int = 3
     reviewer_count: int = 3
     adversarial: bool = False
-    model: Optional[str] = None  # set to cast one model in every role
     effort: str = "high"
-    on_fabrication: str = "retry"  # "warn" | "retry" | "fail"
     page_limit: Optional[int] = None   # overrides the venue's
     enforce_page_limit: bool = False   # a length breach warns unless you ask for a block
-    repair_attempts: int = 2           # tries the author gets to fix a candidate
-    promote: str = "auto"              # "auto" (checks gate) | "manual" (patch only)
-    compile_pdf: bool = True           # submit the compiled PDF, as a venue would receive it
+    compile_pdf: bool = True           # reviewers read the compiled PDF, as a venue would
     engine: str = "pdflatex"
-    ignore_integers_below: int = 0
     personas: List[Persona] = field(default_factory=list)
-    # Per-role models. Unset roles fall back to `model`/`effort`.
-    author_model: Optional[ModelSpec] = None
+    # Casting. Left empty, both are drawn at random from MODEL_POOL by `cast()`; set them to
+    # pin a panel, or to restore the panel a manuscript was first reviewed by.
     editor_model: Optional[ModelSpec] = None
     reviewer_models: List[ModelSpec] = field(default_factory=list)
+    model: Optional[str] = None        # one model in every role, overriding the draw
 
     def __post_init__(self) -> None:
         if not self.personas:
             self.personas = personas(self.reviewer_count, self.adversarial)
-        override = ModelSpec.parse(self.model, self.effort) if self.model else None
-        self.author_model = self.author_model or override or ModelSpec.parse(
-            DEFAULT_AUTHOR_MODEL, self.effort
-        )
-        self.editor_model = self.editor_model or override or ModelSpec.parse(
-            DEFAULT_EDITOR_MODEL, self.effort
-        )
-        self.reviewer_models = cycle(
-            self.reviewer_models
-            or [override or ModelSpec.parse(DEFAULT_REVIEWER_MODEL, self.effort)],
-            len(self.personas),
-        )
+        if self.model:
+            pinned = ModelSpec.parse(self.model, self.effort)
+            self.editor_model = self.editor_model or pinned
+            self.reviewer_models = self.reviewer_models or [pinned]
+        if self.reviewer_models:
+            self.reviewer_models = cycle(self.reviewer_models, len(self.personas))
+
+    @property
+    def cast_complete(self) -> bool:
+        return self.editor_model is not None and len(self.reviewer_models) == len(self.personas)
+
+    def cast(self, pool: Optional[List[str]] = None, seed: Optional[int] = None) -> "RunConfig":
+        """Fill any role that is not pinned by drawing from the pool.
+
+        Reviewers are drawn without replacement while the pool allows, so a panel is as
+        diverse as the pool permits; the editor is drawn independently. The draw is
+        recorded by the caller and reused for every later round of the same manuscript.
+        """
+        import random
+
+        rng = random.Random(seed)
+        candidates = [ModelSpec.parse(m, self.effort) for m in (pool or MODEL_POOL)]
+        if not candidates:
+            raise ValueError("the model pool is empty")
+        if self.editor_model is None:
+            self.editor_model = rng.choice(candidates)
+        if not self.reviewer_models:
+            need = len(self.personas)
+            drawn: List[ModelSpec] = []
+            while len(drawn) < need:
+                batch = list(candidates)
+                rng.shuffle(batch)
+                drawn += batch[: need - len(drawn)]
+            self.reviewer_models = drawn
+        return self
 
     def panel(self) -> List[str]:
         """One line per reviewer: who they are and which model plays them."""
@@ -234,3 +256,12 @@ class RunConfig:
             f"{p.id} {p.name} [{spec}]"
             for p, spec in zip(self.personas, self.reviewer_models)
         ]
+
+    def casting(self) -> dict:
+        """The casting in a form that survives a trip through state.json."""
+        return {
+            "editor": str(self.editor_model),
+            "reviewers": {
+                p.id: str(spec) for p, spec in zip(self.personas, self.reviewer_models)
+            },
+        }

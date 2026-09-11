@@ -132,26 +132,3 @@ class MetaReview(BaseModel):
     decision: Recommendation
     rationale: str
     guidance_to_authors: List[str]
-
-
-class RevisionItem(BaseModel):
-    refs: List[str] = Field(description="Review point labels this addresses, e.g. ['R1-W2'].")
-    critical_issues: List[int] = Field(
-        description=(
-            "1-based indices of the editor's critical_issues this item addresses. "
-            "Empty only if the item addresses none of them."
-        )
-    )
-    section: str
-    action: str = Field(description="Concrete edit to make, not a restatement of the critique.")
-    stance: Literal["accept", "partially_accept", "rebut"] = Field(
-        description="'rebut' means argue the point instead of editing."
-    )
-
-
-class RevisionPlan(BaseModel):
-    strategy: str = Field(description="How this revision round is framed overall.")
-    items: List[RevisionItem]
-    out_of_scope: List[str] = Field(
-        description="Requests that cannot be satisfied without new data/experiments."
-    )
