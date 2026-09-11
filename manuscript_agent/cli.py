@@ -44,23 +44,42 @@ def _log(msg: str) -> None:
     print(msg, flush=True)
 
 
-def load_dotenv(paths=(".env",)) -> List[str]:
-    """Read KEY=VALUE lines from a .env into the environment, without overriding anything
-    already set. No dependency, no interpolation; quotes around the value are stripped."""
+# keys.txt uses "Provider:key" lines (see load_keys.sh); .env uses KEY=VALUE
+PROVIDER_VARS = {"anthropic": "ANTHROPIC_API_KEY", "claude": "ANTHROPIC_API_KEY",
+                 "openai": "OPENAI_API_KEY", "gpt": "OPENAI_API_KEY"}
+
+
+def load_keys(paths=(".env", "keys.txt")) -> List[str]:
+    """Put keys from a .env (KEY=VALUE) or keys.txt (Provider:key) into the environment.
+
+    Never overrides a value already set. No dependency, no interpolation; surrounding quotes
+    and whitespace are stripped. Unknown providers in keys.txt are skipped silently — the
+    file may serve other tools too.
+    """
     loaded: List[str] = []
     for candidate in paths:
         path = Path(candidate).expanduser()
         if not path.is_file():
             continue
+        dotenv = path.name.endswith(".env") or path.suffix == ".env"
         for raw in path.read_text().splitlines():
-            line = raw.strip()
-            if not line or line.startswith("#") or "=" not in line:
+            line = raw.strip().rstrip("\r")
+            if not line or line.startswith("#"):
                 continue
-            if line.startswith("export "):
-                line = line[len("export "):]
-            key, _, value = line.partition("=")
-            key, value = key.strip(), value.strip().strip("'\"")
-            if key and key not in os.environ:
+            if dotenv:
+                if "=" not in line:
+                    continue
+                if line.startswith("export "):
+                    line = line[len("export "):]
+                key, _, value = line.partition("=")
+                key = key.strip()
+            else:
+                if ":" not in line:
+                    continue
+                provider, _, value = line.partition(":")
+                key = PROVIDER_VARS.get(provider.strip().lower(), "")
+            value = value.strip().strip("'\"")
+            if key and value and key not in os.environ:
                 os.environ[key] = value
                 loaded.append(key)
     return loaded
@@ -449,11 +468,12 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv=None) -> int:
-    # .env in the working directory, then in the project, then ~/.manuscript-agent.env
-    loaded = load_dotenv((".env", Path(__file__).resolve().parents[1] / ".env",
-                          "~/.manuscript-agent.env"))
+    # working directory first, then the project root, then your home; .env or keys.txt
+    root = Path(__file__).resolve().parents[1]
+    loaded = load_keys((".env", "keys.txt", root / ".env", root / "keys.txt",
+                        "~/.manuscript-agent.env", "~/.manuscript-agent-keys.txt"))
     if loaded:
-        _log(f"Loaded from .env: {', '.join(loaded)}")
+        _log(f"Loaded keys for: {', '.join(loaded)}")
     args = build_parser().parse_args(argv)
     try:
         return args.func(args)

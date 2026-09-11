@@ -16,3 +16,6 @@ ms/
 
 # macOS
 .DS_Store
+
+# API keys (Provider:key lines; see load_keys.sh)
+keys.txt
