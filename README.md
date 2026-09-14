@@ -46,12 +46,15 @@ python tests/test_manual_rounds.py      # check the install; no API key needed
 Keys are read from the environment; nothing in the tool takes a key as an argument or writes
 one to disk. Three ways to set them, in the order they win:
 
-1. **Your shell** — `export ANTHROPIC_API_KEY=...`, or `source load_keys.sh`, which reads
-   `keys.txt` and exports what it finds (useful when other tools need the same keys).
+1. **Your shell** — `export ANTHROPIC_API_KEY=...`, or `source load_keys.sh [FILE]`, which
+   reads a key file and exports what it finds (useful when other tools need the same keys).
+   It must be **sourced**, not executed — run as `./load_keys.sh` the exports die with the
+   child shell, and the script now refuses rather than let that pass silently.
 2. **A key file, read at startup** — either `keys.txt` (`Provider:key` lines, template in
-   `keys.txt.example`) or `.env` (`KEY=VALUE` lines). Looked for in the directory you run in,
-   then the project root, then `~/.manuscript-agent-keys.txt` / `~/.manuscript-agent.env`.
-   Never overrides a value already in your shell. Both files are gitignored.
+   `keys.txt.example`) or `.env` (`KEY=VALUE` lines). Name it with `--keys FILE` or
+   `KEYS_FILE=FILE`; otherwise it is looked for in the directory you run in, then the
+   project root, then `~/.manuscript-agent-keys.txt` / `~/.manuscript-agent.env`. Never
+   overrides a value already in your shell. Both files are gitignored.
 3. **An `ant auth login` profile** — the Anthropic SDK finds it on its own when neither of the
    above sets `ANTHROPIC_API_KEY`.
 
@@ -59,6 +62,10 @@ one to disk. Three ways to set them, in the order they win:
 # keys.txt
 Anthropic:sk-ant-...
 OpenAI:sk-proj-...
+```
+
+```bash
+manuscript-agent review ./paper --keys "~/OneDrive/ms_keys.txt"    # a file kept elsewhere
 ```
 
 `OPENAI_API_KEY` is optional: without it, the panel is drawn from the Claude models in

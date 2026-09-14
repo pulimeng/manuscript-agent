@@ -17,6 +17,22 @@
 # manuscript-agent also reads keys.txt itself at startup (same format, same lookup as .env),
 # so sourcing this is only needed when you want the keys in your shell for other tools.
 
+# Executed (./load_keys.sh) instead of sourced, the exports die with this process and the
+# "set" report is a lie. Refuse, rather than let that happen silently.
+_lk_sourced=0
+if [[ -n "${ZSH_VERSION:-}" ]]; then
+    [[ "${ZSH_EVAL_CONTEXT:-}" == *:file* ]] && _lk_sourced=1
+elif [[ -n "${BASH_VERSION:-}" ]]; then
+    [[ "${BASH_SOURCE[0]}" != "$0" ]] && _lk_sourced=1
+fi
+if [[ $_lk_sourced -eq 0 ]]; then
+    echo "load_keys: this script must be sourced, not executed — the exports would vanish when it exits." >&2
+    echo "  use:   source load_keys.sh${1:+ \"$1\"}" >&2
+    echo "  or skip it: manuscript-agent reads the file itself with --keys PATH or KEYS_FILE=PATH" >&2
+    exit 2
+fi
+unset _lk_sourced
+
 _lk_here="$(cd "$(dirname "${BASH_SOURCE[0]:-${(%):-%x}}")" 2>/dev/null && pwd)"
 KEYS_FILE="${1:-${KEYS_FILE:-}}"
 if [[ -z "$KEYS_FILE" ]]; then

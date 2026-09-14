@@ -416,6 +416,9 @@ def build_parser() -> argparse.ArgumentParser:
     r.add_argument("--main", help="main source file, when several declare \\documentclass")
     r.add_argument("--letter", help="your response letter for this round")
     r.add_argument("-o", "--out", help="also write the round's report to this file")
+    r.add_argument("--keys", metavar="FILE",
+                   help="key file to read (Provider:key lines, or KEY=VALUE); "
+                        "also honoured as KEYS_FILE in the environment")
 
     where = r.add_argument_group("where rounds are kept")
     where.add_argument("--outdir", default="runs", help="parent directory (default: runs)")
@@ -454,13 +457,18 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv=None) -> int:
-    # working directory first, then the project root, then your home; .env or keys.txt
+    args = build_parser().parse_args(argv)
+    # an explicit file first, then the working directory, the project root, and your home
     root = Path(__file__).resolve().parents[1]
-    loaded = load_keys((".env", "keys.txt", root / ".env", root / "keys.txt",
-                        "~/.manuscript-agent.env", "~/.manuscript-agent-keys.txt"))
+    named = [f for f in (args.keys, os.environ.get("KEYS_FILE")) if f]
+    for f in named:
+        if not Path(f).expanduser().is_file():
+            _log(f"key file not found: {f}")
+            return 2
+    loaded = load_keys(tuple(named) + (".env", "keys.txt", root / ".env", root / "keys.txt",
+                                       "~/.manuscript-agent.env", "~/.manuscript-agent-keys.txt"))
     if loaded:
         _log(f"Loaded keys for: {', '.join(loaded)}")
-    args = build_parser().parse_args(argv)
     try:
         return args.func(args)
     except KeyboardInterrupt:
