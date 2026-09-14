@@ -177,13 +177,21 @@ def _preflight(cfg: RunConfig) -> None:
     missing = {}
     for name, spec in roles:
         var = ENV_VAR[spec.provider]
-        if spec.provider == "openai" and not os.environ.get(var):
+        if spec.provider == "openai":
+            ok = bool(os.environ.get(var))
+        else:
+            # the SDK may find a credential the environment does not show (an `ant auth
+            # login` profile), so ask it rather than the environment
+            import anthropic
+            client = anthropic.Anthropic()
+            ok = bool(client.api_key or client.auth_token)
+        if not ok:
             missing.setdefault(var, []).append(name)
     for var, names in missing.items():
         raise SystemExit(
-            f"{var} is not set, and it is needed for: {', '.join(names)}.\n"
-            f"  export {var}=...    (or pin the panel to another provider, e.g. "
-            "--model claude-opus-5)"
+            f"No credential for {var}, and it is needed for: {', '.join(names)}.\n"
+            "  Put it in keys.txt (Anthropic:sk-ant-...), in .env, or export it in your "
+            "shell —\n  see 'Keys' in the README. Nothing was reviewed."
         )
 
 
