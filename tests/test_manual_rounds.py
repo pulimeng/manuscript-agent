@@ -2,6 +2,8 @@
 import os, shutil, sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+# the model is stubbed below, but the preflight still asks the SDK for a credential
+os.environ.setdefault("ANTHROPIC_API_KEY", "test-key")
 
 from manuscript_agent import cli
 from manuscript_agent.history import SubmissionHistory
