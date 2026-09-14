@@ -12,6 +12,7 @@ dependencies = [
     "anthropic>=0.125",
     "openai>=2.0",
     "pydantic>=2.0",
+    "pypdf>=4.0",
 ]
 
 [project.optional-dependencies]

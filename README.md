@@ -26,7 +26,7 @@ Nothing writes to your manuscript. The agents produce critique; the writing stay
 | | |
 | --- | --- |
 | Python | 3.9 or newer |
-| Packages | `anthropic`, `openai`, `pydantic` — declared in `pyproject.toml`, pinned in `requirements.txt` |
+| Packages | `anthropic`, `openai`, `pydantic`, `pypdf` — declared in `pyproject.toml`, pinned in `requirements.txt` |
 | LaTeX | `latexmk` + `pdflatex` (TeX Live / MacTeX) to compile the PDF the reviewers read. Without it, or with `--no-compile`, they read the sources. |
 | Keys | `ANTHROPIC_API_KEY`; `OPENAI_API_KEY` too if you want OpenAI models in the pool |
 
@@ -189,14 +189,19 @@ For anything else, write the four strings as JSON and pass `--venue-file`
 | a directory | the manuscript inside it: the `.tex` declaring `\documentclass` (preferring `main`/`paper`/`manuscript` if several do), else `main.md` / `paper.md` / a lone `.md` |
 | `.tex` | LaTeX sources; compiled to the PDF the reviewers read |
 | `.md` | Markdown sources; reviewed as text, since there is nothing to compile |
-| `.pdf` | a finished submission — reviewed as it is, one round, no history (there are no sources to version) |
+| `.pdf` | a finished submission — reviewed as it is. Rounds, history and the returning panel work exactly as for a package; what is missing is the diff of your edits and the mechanical checks, since there are no sources to read |
 | `.docx`, `.doc`, `.odt`, `.rtf`, `.pages` | **not supported** — convert with pandoc, or export a PDF |
 
 **Sources win over a PDF sitting beside them.** A package holding both `main.tex` and
 `main.pdf` is resolved to the sources: the PDF is rebuilt from them each round, so reviewers
-never read a stale export, and there is a version to hash and diff against next time. Point
-the command at the `.pdf` explicitly if you want the one-shot path. `--main` overrides the
-search either way.
+never read a stale export, and there is a diff to show them next time. Point the command at
+the `.pdf` explicitly to review it as is. `--main` overrides the search either way.
+
+**PDF or package?** A PDF is enough to be reviewed, and the panel still returns round after
+round with its prior points. What the sources add is the **diff**: on round 2 a reviewer with
+only a new PDF must re-read the whole paper to find out whether you addressed its point; with
+the diff it checks the point against the paragraphs you actually changed. If you have the
+sources, submit the package.
 
 ### Submission packages
 

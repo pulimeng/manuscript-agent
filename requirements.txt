@@ -4,3 +4,4 @@
 anthropic==0.125.0
 openai==2.48.0
 pydantic==2.13.4
+pypdf==6.18.1

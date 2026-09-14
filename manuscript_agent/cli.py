@@ -16,8 +16,8 @@ from pathlib import Path
 from typing import List, Optional
 
 from .agents import EditorAgent, ReviewerAgent
-from .build import BuildError, available as tex_available, compile_pdf
-from .checks import run_checks
+from .build import BuildError
+from .checks import CheckReport, run_checks
 from .config import MODEL_POOL, VENUES, RunConfig, Venue
 from .history import HistoryError, SubmissionHistory
 from .llm import Attachment, RefusalError, TruncatedError
@@ -196,9 +196,12 @@ def _history_dir(ms, args) -> Path:
     invocations works."""
     if args.history:
         return Path(args.history)
-    chosen = Path(args.outdir) / slugify(Path(ms.root).name or Path(ms.path).stem)
+    name = Path(ms.path).stem if isinstance(ms, PdfSubmission) else Path(ms.root).name
+    chosen = Path(args.outdir) / slugify(name or Path(ms.path).stem)
 
     legacy = Path(ms.root) / LEGACY_HISTORY
+    if isinstance(ms, PdfSubmission):
+        return chosen
     if legacy.exists() and not (chosen / "state.json").exists():
         chosen.parent.mkdir(parents=True, exist_ok=True)
         if chosen.exists():
@@ -244,22 +247,6 @@ def _open(target: str, main: Optional[str] = None):
     return Manuscript.load(path)
 
 
-def _compile(ms, cfg: RunConfig):
-    if isinstance(ms, PdfSubmission):
-        _log(f"Reviewing {ms.path.name} as submitted ({ms.path.stat().st_size // 1000} kB)")
-        return ms.attachment()
-    if not cfg.compile_pdf or Path(ms.main).suffix.lower() != ".tex" or not tex_available():
-        return None
-    result = compile_pdf(ms.root, ms.main, cfg.engine)
-    if not result.ok:
-        _log("Build failed — reviewing the sources instead:")
-        for line in result.errors[:5]:
-            _log(f"  {line}")
-        return None
-    _log(f"Compiled {result.pdf.name} ({result.pdf.stat().st_size // 1000} kB)")
-    return Attachment.from_path(result.pdf)
-
-
 # -- the round ------------------------------------------------------------------
 
 
@@ -267,9 +254,7 @@ def cmd_review(args) -> int:
     """One round: freeze, compile, review, adjudicate. You revise; you run it again."""
     cfg = _config(args)
     ms = _open(args.manuscript, args.main)
-
-    if isinstance(ms, PdfSubmission):
-        return _review_pdf(cfg, ms, args)
+    is_pdf = isinstance(ms, PdfSubmission)
 
     history_dir = _history_dir(ms, args)
     if args.fresh and (history_dir / "state.json").exists():
@@ -283,26 +268,38 @@ def cmd_review(args) -> int:
     _preflight(cfg)
 
     store = VersionStore(history.directory / "versions", cfg.compile_pdf, cfg.engine)
-    version = store.freeze(ms.root, Path(ms.main), history.next_vid())
-    _log(f"Frozen {version.stamp()}")
-    if version.build_attempted and version.pdf is None:
-        raise BuildError(
-            "the manuscript does not compile, so there is nothing to submit:\n"
-            + "\n".join(version.build_errors[:8])
-        )
-
-    pkg = version.package
-    checks = run_checks(version, pkg, cfg.page_limit or cfg.venue.page_limit,
-                        cfg.enforce_page_limit)
-    if checks.findings:
-        _log(f"Checks: {checks.summary()}")
-        for f in checks.findings[:8]:
-            _log(f"  {f.render()[2:]}")
+    if is_pdf:
+        version = store.freeze_pdf(Path(ms.path), history.next_vid())
+        _log(f"Frozen {version.stamp()}  (a PDF: no sources, so no diff and no checks)")
+        pkg = ms
+        checks = CheckReport()
+    else:
+        version = store.freeze(ms.root, Path(ms.main), history.next_vid())
+        _log(f"Frozen {version.stamp()}")
+        if version.build_attempted and version.pdf is None:
+            raise BuildError(
+                "the manuscript does not compile, so there is nothing to submit:\n"
+                + "\n".join(version.build_errors[:8])
+            )
+        pkg = version.package
+        checks = run_checks(version, pkg, cfg.page_limit or cfg.venue.page_limit,
+                            cfg.enforce_page_limit)
+        if checks.findings:
+            _log(f"Checks: {checks.summary()}")
+            for f in checks.findings[:8]:
+                _log(f"  {f.render()[2:]}")
 
     previous = history.previous_reviews()
     letter = Path(args.letter).read_text() if args.letter else ""
     changes = ""
-    if history.last and previous:
+    if history.last and previous and is_pdf:
+        same = history.last.pdf_hash == version.pdf_hash
+        _log(f"Continuing round {history.next_number()}: {history.last.vid} -> {version.vid}"
+             + (" — the PDF is byte-identical to last round's" if same else
+                "; the reviewers will re-read the PDF against their previous points"))
+        if not letter:
+            _log("  (no --letter given; with no diff either, say what changed if you can)")
+    elif history.last and previous:
         prior_root = history.directory / "versions" / history.last.vid
         if prior_root.exists():
             changes = tree_patch(prior_root, version.root, history.last.vid,
@@ -360,7 +357,8 @@ def cmd_review(args) -> int:
     (rd / "reviews.md").write_text(reviews_md(reviews))
     (rd / "reviews.json").write_text(json.dumps([r.model_dump() for r in reviews], indent=2))
     (rd / "meta-review.md").write_text(meta_md(meta))
-    (rd / "checks.md").write_text(checks.render())
+    if not is_pdf:
+        (rd / "checks.md").write_text(checks.render())
     if changes:
         (rd / "changes-since-last-round.diff").write_text(changes)
     if dropped:
@@ -387,31 +385,9 @@ def cmd_review(args) -> int:
     _log(f"  reviews    {show(rd / 'reviews.md')}")
     _log(f"  decision   {show(rd / 'meta-review.md')}")
     _log(f"  history    {show(history.directory / 'summary.md')}")
-    _log("\nRevise your sources, then run the same command for round "
+    what = "the PDF" if is_pdf else "your sources"
+    _log(f"\nRevise {what}, then run the same command for round "
          f"{history.next_number()}. Add --letter response.md to say what you changed.")
-    return 0
-
-
-def _review_pdf(cfg: RunConfig, ms: PdfSubmission, args) -> int:
-    """A PDF with no sources: one round, no history, a fresh draw."""
-    if not cfg.cast_complete:
-        cfg.cast(pool=_available_pool(), seed=args.seed)
-    _preflight(cfg)
-    pdf = _compile(ms, cfg)
-    reviews = []
-    for persona, spec in zip(cfg.personas, cfg.reviewer_models):
-        _log(f"{persona.id} ({persona.name}) reading... [{spec}]")
-        reviews.append(ReviewerAgent(build(spec), cfg.venue).review(ms, persona, pdf=pdf))
-    _log(f"editor adjudicating... [{cfg.editor_model}]")
-    meta = EditorAgent(build(cfg.editor_model), cfg.venue).decide(
-        ms, reviews, 1, 1, pdf=pdf, correlation=panel_correlation(cfg.reviewer_models),
-    )
-    report = reviews_md(reviews) + "\n" + meta_md(meta)
-    if args.out:
-        Path(args.out).write_text(report)
-        _log(f"Wrote {args.out}")
-    else:
-        print(report)
     return 0
 
 
@@ -426,7 +402,9 @@ def build_parser() -> argparse.ArgumentParser:
     sub = p.add_subparsers(dest="command", required=True)
 
     r = sub.add_parser("review", help="one review round; revise, then run it again")
-    r.add_argument("manuscript", help="a .tex/.md file, a .pdf, or a directory holding the package")
+    r.add_argument("manuscript",
+                   help="a directory holding the package, a .tex/.md file, or a .pdf "
+                        "(reviewed as is: same panel across rounds, but no diff or checks)")
     r.add_argument("--main", help="main source file, when several declare \\documentclass")
     r.add_argument("--letter", help="your response letter for this round")
     r.add_argument("-o", "--out", help="also write the round's report to this file")

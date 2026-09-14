@@ -46,6 +46,22 @@ def sha(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
+PAGE_OBJECT = re.compile(rb"/Type\s*/Page(?![s/\w])")
+
+
+def pdf_page_count(data: bytes) -> Optional[int]:
+    """Best effort without a PDF library: pypdf if installed, else count page objects.
+    Object streams can hide those, in which case this returns None rather than a wrong number."""
+    try:
+        from pypdf import PdfReader  # optional
+        import io
+        return len(PdfReader(io.BytesIO(data)).pages)
+    except Exception:
+        pass
+    n = len(PAGE_OBJECT.findall(data))
+    return n or None
+
+
 @dataclass
 class Version:
     """A sealed manuscript version. Read-only by contract."""
@@ -155,6 +171,26 @@ class VersionStore:
                 m = PAGES.search(result.log)
                 version.pages = int(m.group(1)) if m else None
 
+        self.versions.append(version)
+        return version
+
+    def freeze_pdf(self, pdf: Path, vid: Optional[str] = None) -> Version:
+        """Seal a PDF that has no sources behind it. Same identity discipline: a copy,
+        hashed, stamped; the source hash *is* the PDF hash, since the PDF is all there is."""
+        vid = vid or f"v{len(self.versions) + 1}"
+        root = self.directory / vid
+        if root.exists():
+            shutil.rmtree(root)
+        root.mkdir(parents=True)
+        frozen = root / f"{vid}.pdf"
+        shutil.copyfile(pdf, frozen)
+        data = frozen.read_bytes()
+        version = Version(
+            vid=vid, root=root, main=frozen, source_hash=sha(data),
+            created_at=datetime.now().isoformat(timespec="seconds"),
+            digest_files=[pdf.name], pdf=frozen, pdf_hash=sha(data),
+            pages=pdf_page_count(data), build_attempted=False, build_ok=True,
+        )
         self.versions.append(version)
         return version
 

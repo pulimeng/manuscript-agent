@@ -178,4 +178,32 @@ assert cli.main(cast_args + ["--fresh", "--seed", "6"]) == 0
 c4 = _json.loads((CASTH / "state.json").read_text())["casting"]
 assert len(SubmissionHistory.load(CASTH).rounds) == 1, "--fresh restarts at round 1"
 print("--recast redraws; --fresh restarts with a new panel")
+
+# --- a bare PDF gets the same continuity: same panel, prior points carried ----
+PDFD = ROOT / "pdfrounds"; shutil.rmtree(PDFD, ignore_errors=True); PDFD.mkdir(parents=True)
+PDF = PDFD / "draft.pdf"
+PDF.write_bytes(b"%PDF-1.4\n1 0 obj<</Type/Catalog>>endobj\n%%EOF\n")
+PDFH = Path("runs") / "draft"; shutil.rmtree(PDFH, ignore_errors=True)
+PROMPTS.clear()
+pdf_args = ["review", str(PDF), "--reviewers", "2", "--seed", "3"]
+
+assert cli.main(pdf_args) == 0
+h1 = SubmissionHistory.load(PDFH)
+assert len(h1.rounds) == 1 and h1.casting and h1.rounds[0].pdf_hash, "a PDF round is recorded"
+assert (PDFH / "versions/v1/v1.pdf").exists() and (PDFH / "round-1/submitted.pdf").exists()
+assert not (PDFH / "round-1/checks.md").exists(), "no sources, no checks"
+assert not (ROOT / "pdfrounds" / ".manuscript-agent").exists()
+print("pdf round 1 recorded:", h1.rounds[0].vid, "| panel:", h1.casting["editor"])
+
+PDF.write_bytes(b"%PDF-1.4\n1 0 obj<</Type/Catalog>>endobj\n% revised\n%%EOF\n")
+assert cli.main(pdf_args + ["--letter", str(ROOT / "letter.md")]) == 0
+h2 = SubmissionHistory.load(PDFH)
+assert len(h2.rounds) == 2 and h2.casting == h1.casting, "same panel returns for a PDF"
+assert h2.rounds[0].pdf_hash != h2.rounds[1].pdf_hash
+r2 = PROMPTS[-1]
+assert "You reviewed an earlier version" in r2 and "NO ABLATION" in r2, \
+    "a PDF resubmission must carry the reviewer's own prior review"
+assert "<changes_since_your_review>" not in r2, "no sources, so no diff is claimed"
+assert not (PDFH / "round-2/changes-since-last-round.diff").exists()
+print("pdf round 2: same panel, prior review carried, no diff claimed")
 print("MANUAL ROUNDS OK")
