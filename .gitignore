@@ -19,3 +19,6 @@ ms/
 
 # API keys (Provider:key lines; see load_keys.sh)
 keys.txt
+
+# your manuscripts — never part of this repo
+input_manuscript/
